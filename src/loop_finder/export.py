@@ -111,10 +111,16 @@ def write_report_json(report: dict, path: Path) -> None:
 def format_text_report(report: dict) -> str:
     lines = [
         f"Source: {report['source']}",
-        f"BPM:    {report['bpm']}",
-        f"Beats:  {report['num_beats']}",
-        "",
     ]
+    if report.get("source_url"):
+        lines.append(f"URL:    {report['source_url']}")
+    lines.extend(
+        [
+            f"BPM:    {report['bpm']}",
+            f"Beats:  {report['num_beats']}",
+            "",
+        ]
+    )
     if not report["loops"]:
         lines.append("No loops found.")
         return "\n".join(lines)

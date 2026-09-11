@@ -1,4 +1,4 @@
-- Allow pasting of a youtube url
-- handle non music noise
+- [x] Allow pasting of a youtube url
 - stem seperation
 - songs with drifting tempo
+- Select good loops from songs with increasing tempo over long lengths (kirtan)

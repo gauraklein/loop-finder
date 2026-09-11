@@ -1,8 +1,8 @@
 # loop-finder
 
-CLI that analyzes an audio file, detects BPM/beats, and exports the best **4-bar** and **8-bar** loops as WAV files.
+CLI that analyzes a local audio file or **YouTube URL**, detects BPM/beats, and exports the best **4-bar** and **8-bar** loops as WAV files.
 
-Assumes **4/4** time.
+Assumes **4/4** time. YouTube downloads use `yt-dlp` and need `ffmpeg` on your PATH.
 
 ## Install
 
@@ -18,12 +18,15 @@ Requires Python 3.11+.
 
 ```bash
 loop-finder path/to/track.wav
+loop-finder "https://www.youtube.com/watch?v=VIDEO_ID"
+loop-finder https://youtu.be/VIDEO_ID
 loop-finder track.mp3 --bars 4,8 --top 5 --out ./loops
 loop-finder track.wav --bars 8 --min-score 0.6
 loop-finder track.wav --bpm 120
 loop-finder track.wav --json
 ```
 
+On zsh, quote `youtube.com/watch?v=...` URLs — the `?` is a glob character and will fail if unquoted. `youtu.be/...` links are fine without quotes.
 ### Options
 
 | Flag | Default | Description |

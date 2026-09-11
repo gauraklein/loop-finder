@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 from typing import Optional
 
 import typer
 
 from loop_finder.analyze import load_and_analyze
+from loop_finder.download import download_audio, looks_like_url, normalize_url
 from loop_finder.export import (
     build_report,
     export_loops,
@@ -35,12 +37,31 @@ def _parse_bars(value: str) -> list[int]:
     return bars
 
 
+def _resolve_audio(source: str, tmp_dir: Path) -> tuple[Path, str | None]:
+    """Return (local audio path, optional source URL)."""
+    source = source.strip()
+    if looks_like_url(source):
+        source = normalize_url(source)
+        typer.echo(f"Downloading audio from {source} ...", err=True)
+        try:
+            path = download_audio(source, tmp_dir)
+        except Exception as exc:  # noqa: BLE001 — surface yt-dlp errors cleanly
+            raise typer.BadParameter(f"Download failed: {exc}") from exc
+        typer.echo(f"Downloaded: {path.name}", err=True)
+        return path, source
+
+    path = Path(source).expanduser()
+    if not path.exists():
+        raise typer.BadParameter(f"File not found: {path}")
+    if not path.is_file():
+        raise typer.BadParameter(f"Not a file: {path}")
+    return path, None
+
+
 def main(
-    audio: Path = typer.Argument(
+    source: str = typer.Argument(
         ...,
-        exists=True,
-        readable=True,
-        help="Input audio file",
+        help="Audio file path or YouTube URL (quote watch?v= links in zsh)",
     ),
     bars: str = typer.Option("4,8", "--bars", help="Bar lengths to find (4, 8, or 4,8)"),
     top: int = typer.Option(5, "--top", min=1, help="Top candidates per bar length"),
@@ -55,34 +76,39 @@ def main(
         False, "--json", help="Print machine-readable report to stdout"
     ),
 ) -> None:
-    """Analyze AUDIO and export the best 4/8-bar loops."""
+    """Analyze a local audio file or YouTube URL and export the best 4/8-bar loops."""
     bar_lengths = _parse_bars(bars)
 
-    typer.echo(f"Analyzing {audio} ...", err=True)
-    analysis = load_and_analyze(audio, bpm_override=bpm)
-    typer.echo(
-        f"Detected BPM: {analysis.bpm:.2f}  beats: {len(analysis.beat_times)}",
-        err=True,
-    )
+    with tempfile.TemporaryDirectory(prefix="loop-finder-") as tmp:
+        audio, source_url = _resolve_audio(source, Path(tmp))
 
-    candidates = find_candidates(
-        analysis,
-        bar_lengths=bar_lengths,
-        top=top,
-        min_score=min_score,
-    )
-    rows = export_loops(analysis, candidates, out)
-    report = build_report(analysis, rows)
+        typer.echo(f"Analyzing {audio.name} ...", err=True)
+        analysis = load_and_analyze(audio, bpm_override=bpm)
+        typer.echo(
+            f"Detected BPM: {analysis.bpm:.2f}  beats: {len(analysis.beat_times)}",
+            err=True,
+        )
 
-    report_path = out / "report.json"
-    write_report_json(report, report_path)
+        candidates = find_candidates(
+            analysis,
+            bar_lengths=bar_lengths,
+            top=top,
+            min_score=min_score,
+        )
+        rows = export_loops(analysis, candidates, out)
+        report = build_report(analysis, rows)
+        if source_url:
+            report["source_url"] = source_url
 
-    if as_json:
-        typer.echo(json.dumps(report, indent=2))
-    else:
-        typer.echo(format_text_report(report))
-        typer.echo(f"\nWrote {len(rows)} loop(s) to {out}", err=True)
-        typer.echo(f"Report: {report_path}", err=True)
+        report_path = out / "report.json"
+        write_report_json(report, report_path)
+
+        if as_json:
+            typer.echo(json.dumps(report, indent=2))
+        else:
+            typer.echo(format_text_report(report))
+            typer.echo(f"\nWrote {len(rows)} loop(s) to {out}", err=True)
+            typer.echo(f"Report: {report_path}", err=True)
 
 
 def app() -> None:
