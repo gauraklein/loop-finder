@@ -49,24 +49,31 @@ On zsh, quote `youtube.com/watch?v=...` URLs — the `?` is a glob character and
 
 ### Output
 
-For `song.wav`, writes files like:
+With `--out ./loops` (default), each track gets its own folder. Filenames start with rank so they’re readable on small screens:
 
 ```
-loops/song_4bar_01.wav
-loops/song_2bar_01.wav
-...
-loops/report.json
+loops/
+  song/
+    loops/
+      01_2bar_song.wav
+      01_4bar_song.wav
+      02_2bar_song.wav
+    report.json
 ```
 
 With `--stems`:
 
 ```
-loops/song_4bar_01.wav
-loops/song_4bar_01_stems/
-  drums.wav
-  bass.wav
-  other.wav
-  vocals.wav
+loops/
+  song/
+    loops/
+      01_2bar_song.wav
+    stems/
+      01_2bar_song_drums.wav
+      01_2bar_song_bass.wav
+      01_2bar_song_other.wav
+      01_2bar_song_vocals.wav
+    report.json
 ```
 
 Each export is beat-aligned. Ranking uses boundary chroma match (seamless join), bar-to-bar coherence, loudness, and energy stability.

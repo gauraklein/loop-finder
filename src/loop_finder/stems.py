@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
@@ -28,15 +29,20 @@ class StemSeparator:
         Separator = _require_separator()
         self._separator = Separator(model=model)
 
-    def separate_file(self, loop_path: Path, out_dir: Path) -> dict[str, Path]:
+    def separate_file(
+        self,
+        loop_path: Path,
+        stems_dir: Path,
+        basename: str,
+    ) -> dict[str, Path]:
         """
-        Run Demucs on a loop WAV and write stem WAVs into out_dir.
+        Run Demucs on a loop WAV and write stem WAVs into stems_dir.
 
-        Returns a map of stem name -> output path.
+        Files are named ``{basename}_drums.wav``, etc.
         """
         loop_path = Path(loop_path)
-        out_dir = Path(out_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
+        stems_dir = Path(stems_dir)
+        stems_dir.mkdir(parents=True, exist_ok=True)
 
         _origin, stems = self._separator.separate_audio_file(loop_path)
         written: dict[str, Path] = {}
@@ -49,7 +55,7 @@ class StemSeparator:
             audio = stems[name].detach().cpu().numpy()
             if audio.ndim == 2:
                 audio = audio.T  # (samples, channels)
-            path = out_dir / f"{name}.wav"
+            path = stems_dir / f"{basename}_{name}.wav"
             sf.write(path, audio.astype(np.float32, copy=False), sr)
             written[name] = path
 
@@ -60,24 +66,26 @@ class StemSeparator:
 
 def separate_loops(
     loop_rows: list[dict],
+    track_dir: Path,
     model: str = "htdemucs",
-    on_progress: callable | None = None,
+    on_progress: Callable[[str], None] | None = None,
 ) -> list[dict]:
     """
-    For each exported loop row, write `<stem>_stems/{drums,bass,other,vocals}.wav`.
+    For each exported loop, write stems into ``{track_dir}/stems/``.
 
-    Mutates and returns the rows, adding a `stems_dir` field.
+    Mutates and returns the rows, adding ``stems_dir`` and ``stems`` fields.
     """
     if not loop_rows:
         return loop_rows
 
+    stems_dir = Path(track_dir) / "stems"
     separator = StemSeparator(model=model)
     for row in loop_rows:
         loop_path = Path(row["file"])
-        stems_dir = loop_path.with_name(f"{loop_path.stem}_stems")
+        basename = row.get("basename") or loop_path.stem
         if on_progress:
             on_progress(loop_path.name)
-        written = separator.separate_file(loop_path, stems_dir)
+        written = separator.separate_file(loop_path, stems_dir, basename)
         row["stems_dir"] = str(stems_dir)
         row["stems"] = {name: str(path) for name, path in written.items()}
     return loop_rows

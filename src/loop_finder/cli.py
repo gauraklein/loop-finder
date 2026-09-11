@@ -108,7 +108,7 @@ def main(
             top=top,
             min_score=min_score,
         )
-        rows = export_loops(analysis, candidates, out)
+        track_dir, rows = export_loops(analysis, candidates, out)
 
         if stems:
             from loop_finder.stems import separate_loops
@@ -117,6 +117,7 @@ def main(
             try:
                 separate_loops(
                     rows,
+                    track_dir=track_dir,
                     on_progress=lambda name: typer.echo(f"  stems: {name}", err=True),
                 )
             except RuntimeError as exc:
@@ -129,16 +130,16 @@ def main(
         if stems:
             report["stems"] = True
 
-        report_path = out / "report.json"
+        report_path = track_dir / "report.json"
         write_report_json(report, report_path)
 
         if as_json:
             typer.echo(json.dumps(report, indent=2))
         else:
             typer.echo(format_text_report(report))
-            typer.echo(f"\nWrote {len(rows)} loop(s) to {out}", err=True)
+            typer.echo(f"\nWrote {len(rows)} loop(s) to {track_dir / 'loops'}", err=True)
             if stems:
-                typer.echo("Stem folders written next to each loop WAV.", err=True)
+                typer.echo(f"Stems written to {track_dir / 'stems'}", err=True)
             typer.echo(f"Report: {report_path}", err=True)
 
 

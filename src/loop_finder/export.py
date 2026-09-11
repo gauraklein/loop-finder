@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import numpy as np
@@ -10,6 +11,16 @@ import soundfile as sf
 
 from loop_finder.analyze import AnalysisResult
 from loop_finder.score import LoopCandidate
+
+
+def sanitize_track_name(name: str) -> str:
+    """Make a filesystem-safe folder / file stem from a track title."""
+    safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip(" .")
+    return safe or "track"
+
+
+def track_output_dir(out_dir: Path, track_name: str) -> Path:
+    return Path(out_dir) / sanitize_track_name(track_name)
 
 
 def _slice_audio(
@@ -49,11 +60,18 @@ def export_loops(
     analysis: AnalysisResult,
     candidates_by_bars: dict[int, list[LoopCandidate]],
     out_dir: Path,
-) -> list[dict]:
-    """Write ranked WAV files and return report rows."""
+) -> tuple[Path, list[dict]]:
+    """
+    Write ranked WAV files under ``{out}/{track}/loops/``.
+
+    Filenames are number-first for small screens, e.g. ``01_2bar_Track.wav``.
+    Returns ``(track_dir, rows)``.
+    """
     out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stem = analysis.path.stem
+    stem = sanitize_track_name(analysis.path.stem)
+    track_dir = track_output_dir(out_dir, stem)
+    loops_dir = track_dir / "loops"
+    loops_dir.mkdir(parents=True, exist_ok=True)
     rows: list[dict] = []
 
     for bars, candidates in sorted(candidates_by_bars.items()):
@@ -65,12 +83,14 @@ def export_loops(
                 cand.end_time,
                 cand.boundary,
             )
-            filename = f"{stem}_{bars}bar_{rank:02d}.wav"
-            path = out_dir / filename
+            basename = f"{rank:02d}_{bars}bar_{stem}"
+            filename = f"{basename}.wav"
+            path = loops_dir / filename
             sf.write(path, audio, analysis.sr_export)
 
             row = {
                 "file": str(path),
+                "basename": basename,
                 "bars": bars,
                 "rank": rank,
                 "score": round(cand.score, 4),
@@ -86,7 +106,7 @@ def export_loops(
             }
             rows.append(row)
 
-    return rows
+    return track_dir, rows
 
 
 def build_report(
@@ -105,6 +125,7 @@ def build_report(
 
 def write_report_json(report: dict, path: Path) -> None:
     path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
