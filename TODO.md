@@ -1,0 +1,4 @@
+- Allow pasting of a youtube url
+- handle non music noise
+- stem seperation
+- songs with drifting tempo
