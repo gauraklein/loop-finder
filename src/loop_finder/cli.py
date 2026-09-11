@@ -19,19 +19,23 @@ from loop_finder.export import (
 )
 from loop_finder.score import find_candidates
 
+ALLOWED_BARS = (2, 4, 8)
+
 
 def _parse_bars(value: str) -> list[int]:
     parts = [p.strip() for p in value.split(",") if p.strip()]
     if not parts:
-        raise typer.BadParameter("Provide at least one bar length, e.g. 4,8")
+        raise typer.BadParameter("Provide at least one bar length, e.g. 4,2")
     bars: list[int] = []
     for part in parts:
         try:
             n = int(part)
         except ValueError as exc:
             raise typer.BadParameter(f"Invalid bar length: {part}") from exc
-        if n not in (4, 8):
-            raise typer.BadParameter("Bar lengths must be 4 and/or 8")
+        if n not in ALLOWED_BARS:
+            raise typer.BadParameter(
+                f"Bar lengths must be one of {', '.join(map(str, ALLOWED_BARS))}"
+            )
         if n not in bars:
             bars.append(n)
     return bars
@@ -63,7 +67,11 @@ def main(
         ...,
         help="Audio file path or YouTube URL (quote watch?v= links in zsh)",
     ),
-    bars: str = typer.Option("4,8", "--bars", help="Bar lengths to find (4, 8, or 4,8)"),
+    bars: str = typer.Option(
+        "4,2",
+        "--bars",
+        help="Bar lengths to find (2, 4, 8, or a comma list like 4,2)",
+    ),
     top: int = typer.Option(5, "--top", min=1, help="Top candidates per bar length"),
     out: Path = typer.Option(Path("./loops"), "--out", help="Output directory"),
     bpm: Optional[float] = typer.Option(
@@ -72,11 +80,16 @@ def main(
     min_score: float = typer.Option(
         0.0, "--min-score", help="Discard candidates below this score"
     ),
+    stems: bool = typer.Option(
+        False,
+        "--stems",
+        help="Also split each loop into Demucs stems (requires optional stems extra)",
+    ),
     as_json: bool = typer.Option(
         False, "--json", help="Print machine-readable report to stdout"
     ),
 ) -> None:
-    """Analyze a local audio file or YouTube URL and export the best 4/8-bar loops."""
+    """Analyze a local audio file or YouTube URL and export the best loops."""
     bar_lengths = _parse_bars(bars)
 
     with tempfile.TemporaryDirectory(prefix="loop-finder-") as tmp:
@@ -96,9 +109,25 @@ def main(
             min_score=min_score,
         )
         rows = export_loops(analysis, candidates, out)
+
+        if stems:
+            from loop_finder.stems import separate_loops
+
+            typer.echo("Separating stems with Demucs ...", err=True)
+            try:
+                separate_loops(
+                    rows,
+                    on_progress=lambda name: typer.echo(f"  stems: {name}", err=True),
+                )
+            except RuntimeError as exc:
+                typer.echo(str(exc), err=True)
+                raise typer.Exit(code=1) from exc
+
         report = build_report(analysis, rows)
         if source_url:
             report["source_url"] = source_url
+        if stems:
+            report["stems"] = True
 
         report_path = out / "report.json"
         write_report_json(report, report_path)
@@ -108,6 +137,8 @@ def main(
         else:
             typer.echo(format_text_report(report))
             typer.echo(f"\nWrote {len(rows)} loop(s) to {out}", err=True)
+            if stems:
+                typer.echo("Stem folders written next to each loop WAV.", err=True)
             typer.echo(f"Report: {report_path}", err=True)
 
 

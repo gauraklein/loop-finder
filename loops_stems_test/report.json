@@ -1,0 +1,31 @@
+{
+  "source": "sample_120bpm.wav",
+  "bpm": 117.454,
+  "sample_rate": 44100,
+  "num_beats": 60,
+  "loops": [
+    {
+      "file": "loops_stems_test/sample_120bpm_2bar_01.wav",
+      "bars": 2,
+      "rank": 1,
+      "score": 0.9302,
+      "boundary": 1.0,
+      "coherence": 1.0,
+      "energy": 0.8042,
+      "loudness": 0.8328,
+      "start_time": 0.5108,
+      "end_time": 4.5279,
+      "duration": 4.0171,
+      "start_beat": 0,
+      "end_beat": 8,
+      "stems_dir": "loops_stems_test/sample_120bpm_2bar_01_stems",
+      "stems": {
+        "drums": "loops_stems_test/sample_120bpm_2bar_01_stems/drums.wav",
+        "bass": "loops_stems_test/sample_120bpm_2bar_01_stems/bass.wav",
+        "other": "loops_stems_test/sample_120bpm_2bar_01_stems/other.wav",
+        "vocals": "loops_stems_test/sample_120bpm_2bar_01_stems/vocals.wav"
+      }
+    }
+  ],
+  "stems": true
+}

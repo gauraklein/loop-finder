@@ -1,4 +1,4 @@
 - [x] Allow pasting of a youtube url
-- stem seperation
+- [x] stem seperation
 - songs with drifting tempo
 - Select good loops from songs with increasing tempo over long lengths (kirtan)
