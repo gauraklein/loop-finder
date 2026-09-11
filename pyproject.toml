@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "loop-finder"
+version = "0.1.0"
+description = "Automatically find and export 4- and 8-bar loops from an audio file"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "librosa>=0.10",
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "soundfile>=0.12",
+    "typer>=0.12",
+]
+
+[project.scripts]
+loop-finder = "loop_finder.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
