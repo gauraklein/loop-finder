@@ -11,6 +11,9 @@ from loop_finder.analyze import AnalysisResult
 
 BEATS_PER_BAR = 4
 
+# Reject windows quieter than this fraction of the track's active median RMS.
+MIN_LOUDNESS_RATIO = 0.55
+
 
 @dataclass
 class LoopCandidate:
@@ -25,6 +28,15 @@ class LoopCandidate:
     boundary: float
     coherence: float
     energy: float
+    loudness: float
+
+
+def _active_rms_median(rms: NDArray[np.floating]) -> float:
+    """Median RMS of non-silent frames — reference for musical loudness."""
+    active = rms[rms > 1e-4]
+    if active.size == 0:
+        return float(np.median(rms)) if rms.size else 0.0
+    return float(np.median(active))
 
 
 def _cosine_sim(a: NDArray[np.floating], b: NDArray[np.floating]) -> float:
@@ -57,6 +69,7 @@ def score_candidate(
     analysis: AnalysisResult,
     start_beat: int,
     bars: int,
+    rms_ref: float,
 ) -> LoopCandidate | None:
     """Score one beat-aligned window. Returns None if not enough beats."""
     beats_needed = bars * BEATS_PER_BAR
@@ -79,6 +92,15 @@ def score_candidate(
     wrap_f = _frames_for_time(wrap_time, sr, hop)
     # Approximate one-beat duration in frames from first beat of window
     beat1_end = _frames_for_time(float(analysis.beat_times[start_beat + 1]), sr, hop)
+
+    rms_slice = rms[start_f:end_f]
+    if rms_slice.size == 0:
+        return None
+    mean_rms = float(np.mean(rms_slice))
+
+    # Drop quiet intros/outros that look "perfect" only because they're empty
+    if rms_ref > 0 and mean_rms < MIN_LOUDNESS_RATIO * rms_ref:
+        return None
 
     # Boundary: chroma of first beat vs chroma of the beat after the loop
     first_vec = _mean_chroma(chroma, start_f, beat1_end)
@@ -105,23 +127,27 @@ def score_candidate(
         bar_sims.append(sim)
     coherence = float(np.mean(bar_sims)) if bar_sims else 1.0
 
-    # Energy stability: prefer low RMS variance; also penalize silence
-    rms_slice = rms[start_f:end_f]
-    if rms_slice.size == 0:
-        return None
-    mean_rms = float(np.mean(rms_slice))
+    # Loudness vs track median (1.0 ~= typical musical level)
+    if rms_ref > 1e-9:
+        loudness = float(np.clip(mean_rms / rms_ref, 0.0, 1.5) / 1.5)
+    else:
+        loudness = 0.0
+
+    # Energy stability: prefer low RMS variance within the window
     std_rms = float(np.std(rms_slice))
     if mean_rms < 1e-6:
         energy = 0.0
     else:
         cv = std_rms / mean_rms
-        energy = float(np.clip(1.0 - cv, 0.0, 1.0))
-        # Quiet-section penalty
-        if mean_rms < 0.02:
-            energy *= mean_rms / 0.02
+        energy = float(np.clip(1.0 - 0.5 * cv, 0.0, 1.0))
 
-    # Weighted overall score
-    score = 0.45 * boundary + 0.35 * coherence + 0.20 * energy
+    # Weighted overall score — loudness outweighs flat quiet sections
+    score = (
+        0.35 * boundary
+        + 0.25 * coherence
+        + 0.30 * loudness
+        + 0.10 * energy
+    )
 
     return LoopCandidate(
         bars=bars,
@@ -133,6 +159,7 @@ def score_candidate(
         boundary=boundary,
         coherence=coherence,
         energy=energy,
+        loudness=loudness,
     )
 
 
@@ -145,6 +172,7 @@ def find_candidates(
     """Slide over beats and return top-N candidates per bar length."""
     results: dict[int, list[LoopCandidate]] = {}
     n_beats = len(analysis.beat_times)
+    rms_ref = _active_rms_median(analysis.rms)
 
     for bars in bar_lengths:
         beats_needed = bars * BEATS_PER_BAR
@@ -152,7 +180,7 @@ def find_candidates(
         # Leave room for wrap beat after the window
         max_start = n_beats - beats_needed - 1
         for start in range(max(0, max_start)):
-            cand = score_candidate(analysis, start, bars)
+            cand = score_candidate(analysis, start, bars, rms_ref=rms_ref)
             if cand is not None and cand.score >= min_score:
                 scored.append(cand)
 

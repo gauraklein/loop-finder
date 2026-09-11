@@ -77,6 +77,7 @@ def export_loops(
                 "boundary": round(cand.boundary, 4),
                 "coherence": round(cand.coherence, 4),
                 "energy": round(cand.energy, 4),
+                "loudness": round(cand.loudness, 4),
                 "start_time": round(cand.start_time, 4),
                 "end_time": round(cand.end_time, 4),
                 "duration": round(cand.end_time - cand.start_time, 4),
