@@ -5,26 +5,43 @@ audio analysis, and loop detection.
 """
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import os
 import uuid
 import shutil
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import asyncio
 import json
-
-# Import existing loop-finder functionality
 import sys
-sys.path.append(str(Path(__file__).parent.parent / "src"))
 
-from loop_finder.analyze import load_and_analyze
-from loop_finder.download import download_audio, looks_like_url, normalize_url
-from loop_finder.score import find_candidates
-from loop_finder.export import export_loops, build_report, write_report_json
-from loop_finder.stems import separate_loops
+# ===== CRITICAL: Add src directory to Python path BEFORE any loop_finder imports =====
+# This ensures we can import the local loop_finder package
+current_dir = Path(__file__).parent
+project_root = current_dir.parent
+src_path = project_root / "src"
+
+# Add src to Python path if not already there
+if str(src_path) not in sys.path:
+    sys.path.insert(0, str(src_path))
+    print(f"Added {src_path} to Python path")
+
+# Now import loop-finder functionality
+try:
+    from loop_finder.analyze import load_and_analyze
+    from loop_finder.download import download_audio, looks_like_url, normalize_url
+    from loop_finder.score import find_candidates
+    from loop_finder.export import export_loops, build_report, write_report_json
+    from loop_finder.stems import separate_loops, StemSeparator
+    print("Successfully imported loop_finder modules")
+except ImportError as e:
+    print(f"Failed to import loop_finder modules: {e}")
+    print(f"Current sys.path: {sys.path}")
+    print(f"Looking for src at: {src_path}")
+    print(f"Src exists: {src_path.exists()}")
+    raise
 
 app = FastAPI(title="Loop-Finder API", version="0.1.0")
 
@@ -38,13 +55,14 @@ app.add_middleware(
 )
 
 # Storage directories
-UPLOAD_DIR = Path("uploads")
-RESULTS_DIR = Path("results")
+BASE_DIR = project_root
+UPLOAD_DIR = BASE_DIR / "uploads"
+RESULTS_DIR = BASE_DIR / "results"
 UPLOAD_DIR.mkdir(exist_ok=True)
 RESULTS_DIR.mkdir(exist_ok=True)
 
 # In-memory storage for task status (use Redis/database in production)
-tasks = {}
+tasks: Dict[str, Dict[str, Any]] = {}
 
 @app.get("/")
 async def root():
@@ -56,7 +74,8 @@ async def upload_file(
     file: UploadFile = File(...),
     bars: str = Form("4,2"),
     top: int = Form(5),
-    out_dir: Optional[str] = Form(None)
+    out_dir: Optional[str] = Form(None),
+    stems: bool = Form(False)
 ):
     """
     Upload an audio file and start analysis.
@@ -82,8 +101,10 @@ async def upload_file(
         "bars": bars,
         "top": top,
         "out_dir": out_dir or str(RESULTS_DIR / task_id),
+        "stems": stems,
         "result": None,
-        "error": None
+        "error": None,
+        "progress": 0
     }
 
     # Start processing in background
@@ -97,7 +118,8 @@ async def analyze_url(
     url: str = Form(...),
     bars: str = Form("4,2"),
     top: int = Form(5),
-    out_dir: Optional[str] = Form(None)
+    out_dir: Optional[str] = Form(None),
+    stems: bool = Form(False)
 ):
     """
     Analyze a YouTube URL or direct audio URL.
@@ -113,8 +135,10 @@ async def analyze_url(
         "bars": bars,
         "top": top,
         "out_dir": out_dir or str(RESULTS_DIR / task_id),
+        "stems": stems,
         "result": None,
-        "error": None
+        "error": None,
+        "progress": 0
     }
 
     # Start processing in background
@@ -127,74 +151,135 @@ async def process_audio_task(task_id: str):
     try:
         task = tasks[task_id]
         task["status"] = "analyzing"
+        task["progress"] = 10
 
         # Parse bars parameter
         bar_lengths = [int(b.strip()) for b in task["bars"].split(",") if b.strip()]
 
-        # Run analysis (this is where we'd call the actual loop-finder logic)
-        # For now, we'll simulate the process
-        await asyncio.sleep(2)  # Simulate processing time
+        # Update progress
+        task["progress"] = 20
 
-        # TODO: Replace this with actual loop-finder processing
-        # This would involve:
-        # 1. load_and_analyze(task["file_path"])
-        # 2. find_candidates(...)
-        # 3. export_loops(...)
-        # 4. Build results
+        # Run actual analysis
+        print(f"Analyzing {task['file_path']}...")
+        analysis = load_and_analyze(task["file_path"])
+        task["progress"] = 40
+        print(f"Detected BPM: {analysis.bpm:.2f}")
 
-        # Mock result for demonstration
+        # Find candidates
+        print("Finding loop candidates...")
+        candidates_by_bars = find_candidates(
+            analysis,
+            bar_lengths=bar_lengths,
+            top=task["top"],
+            min_score=0.0
+        )
+        task["progress"] = 60
+        print(f"Found candidates: {[len(v) for v in candidates_by_bars.values()]}")
+
+        # Export loops
+        print("Exporting loops...")
+        track_dir, rows = export_loops(
+            analysis,
+            candidates_by_bars,
+            Path(task["out_dir"])
+        )
+        task["progress"] = 80
+        print(f"Exported {len(rows)} loops to {track_dir}")
+
+        # Separate stems if requested
+        if task["stems"]:
+            print("Separating stems...")
+            # Convert rows to the format expected by separate_loops
+            loop_rows = []
+            for row in rows:
+                loop_rows.append({
+                    "file": row["file"],
+                    "basename": row.get("basename") or Path(row["file"]).stem
+                })
+
+            # Separate stems
+            separated_rows = separate_loops(
+                loop_rows,
+                Path(task["out_dir"]),
+                on_progress=lambda name: print(f"  stems: {name}")
+            )
+            # Update rows with stem information
+            for i, row in enumerate(rows):
+                row["stems_dir"] = separated_rows[i].get("stems_dir")
+                row["stems"] = separated_rows[i].get("stems")
+            task["progress"] = 90
+
+        # Build final result
+        report = build_report(analysis, rows)
+        if task["stems"]:
+            report["stems"] = True
+
+        # Save report
+        report_path = Path(task["out_dir"]) / "report.json"
+        write_report_json(report, report_path)
+
+        # Prepare result for frontend
         task["result"] = {
             "task_id": task_id,
             "filename": task["filename"],
             "file_path": task["file_path"],
             "analysis_complete": True,
+            "report_path": str(report_path),
+            "loops_dir": str(track_dir / "loops"),
+            "stems_dir": str(track_dir / "stems") if task["stems"] else None,
             "loops": [
                 {
-                    "id": f"{task_id}_loop_1",
-                    "filename": f"loop_1.wav",
-                    "bars": 4,
-                    "rank": 1,
-                    "score": 0.95,
-                    "start_time": 0.0,
-                    "end_time": 4.0,
-                    "duration": 4.0,
-                    "preview_url": f"/api/preview/{task_id}_loop_1"
-                },
-                {
-                    "id": f"{task_id}_loop_2",
-                    "filename": f"loop_2.wav",
-                    "bars": 2,
-                    "rank": 2,
-                    "score": 0.87,
-                    "start_time": 5.0,
-                    "end_time": 9.0,
-                    "duration": 4.0,
-                    "preview_url": f"/api/preview/{task_id}_loop_2"
+                    "id": f"{task_id}_loop_{i}",
+                    "filename": Path(row["file"]).name,
+                    "basename": row.get("basename"),
+                    "bars": row["bars"],
+                    "rank": row["rank"],
+                    "score": round(row["score"], 4),
+                    "start_time": round(row["start_time"], 3),
+                    "end_time": round(row["end_time"], 3),
+                    "duration": round(row["end_time"] - row["start_time"], 3),
+                    "preview_url": f"/api/loop/{task_id}/{Path(row['file']).name}",
+                    "stems": row.get("stems", {})
                 }
+                for i, row in enumerate(rows)
             ]
         }
         task["status"] = "completed"
+        task["progress"] = 100
 
     except Exception as e:
+        import traceback
+        print(f"Error in process_audio_task: {e}")
+        traceback.print_exc()
         task["status"] = "failed"
         task["error"] = str(e)
+        task["progress"] = 0
 
 async def process_url_task(task_id: str):
     """Background task to process URL (YouTube or direct)."""
     try:
         task = tasks[task_id]
         task["status"] = "downloading"
+        task["progress"] = 10
 
-        # TODO: Implement actual YouTube/download logic using yt-dlp
-        # For now, simulate
-        await asyncio.sleep(3)  # Simulate download time
+        # Download audio
+        print(f"Downloading from {task['url']}...")
+        audio_path = download_audio(task["url"], UPLOAD_DIR)
+        task["file_path"] = str(audio_path)
+        task["filename"] = audio_path.name
+        task["progress"] = 40
+        print(f"Downloaded to {audio_path}")
 
         # Then process like uploaded file
         await process_audio_task(task_id)
 
     except Exception as e:
+        import traceback
+        print(f"Error in process_url_task: {e}")
+        traceback.print_exc()
         task["status"] = "failed"
         task["error"] = str(e)
+        task["progress"] = 0
 
 @app.get("/task/{task_id}")
 async def get_task_status(task_id: str):
@@ -203,15 +288,60 @@ async def get_task_status(task_id: str):
         raise HTTPException(status_code=404, detail="Task not found")
     return tasks[task_id]
 
-@app.get("/api/preview/{loop_id}")
-async def get_loop_preview(loop_id: str):
-    """
-    Serve a preview snippet of a loop for audio playback.
-    In a real implementation, this would serve the actual audio file.
-    """
-    # This would serve the actual loop WAV file
-    # For now, return a placeholder
-    return {"message": f"Preview for loop {loop_id} would be served here"}
+@app.get("/api/loop/{task_id}/{filename}")
+async def get_loop_file(task_id: str, filename: str):
+    """Serve a loop WAV file for audio playback."""
+    # Find the task to verify it exists and get the loops directory
+    if task_id not in tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task = tasks[task_id]
+    if task["status"] != "completed":
+        raise HTTPException(status_code=400, detail="Task not completed yet")
+
+    # Construct file path
+    loops_dir = Path(task["result"]["loops_dir"]) if task["result"] and task["result"].get("loops_dir") else None
+    if not loops_dir:
+        raise HTTPException(status_code=404, detail="Loops directory not found")
+
+    file_path = loops_dir / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Loop file not found")
+
+    return FileResponse(
+        path=str(file_path),
+        media_type="audio/wav",
+        filename=filename
+    )
+
+@app.get("/api/stem/{task_id}/{loop_basename}/{stem_name}")
+async def get_stem_file(task_id: str, loop_basename: str, stem_name: str):
+    """Serve a stem WAV file for audio playback."""
+    # Find the task to verify it exists and get the stems directory
+    if task_id not in tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task = tasks[task_id]
+    if task["status"] != "completed":
+        raise HTTPException(status_code=400, detail="Task not completed yet")
+
+    if not task.get("stems"):
+        raise HTTPException(status_code=400, detail="Stems not generated for this task")
+
+    # Construct file path
+    stems_base = Path(task["result"]["stems_dir"]) if task["result"] and task["result"].get("stems_dir") else None
+    if not stems_base:
+        raise HTTPException(status_code=404, detail="Stems directory not found")
+
+    file_path = stems_base / loop_basename / f"{stem_name}.wav"
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Stem file not found")
+
+    return FileResponse(
+        path=str(file_path),
+        media_type="audio/wav",
+        filename=f"{loop_basename}_{stem_name}.wav"
+    )
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

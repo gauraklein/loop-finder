@@ -4,6 +4,7 @@ import { getTaskStatus } from '../services/apiService';
 interface LoopResult {
   id: string;
   filename: string;
+  basename: string | undefined;
   bars: number;
   rank: number;
   score: number;
@@ -11,6 +12,7 @@ interface LoopResult {
   end_time: number;
   duration: number;
   preview_url: string;
+  stems?: Record<string, string>;
 }
 
 interface LoopResultsDisplayProps {
@@ -89,7 +91,7 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
             </div>
 
             <div className="loop-details">
-              <p><strong>Bars:</strong> {loop.bar}</p>
+              <p><strong>Bars:</strong> {loop.bars}</p>
               <p><strong>Duration:</strong> {loop.duration.toFixed(2)} seconds</p>
               <p><strong>Time:</strong> {loop.start_time.toFixed(2)}s → {loop.end_time.toFixed(2)}s</p>
             </div>
