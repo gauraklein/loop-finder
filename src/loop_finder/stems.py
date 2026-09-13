@@ -38,11 +38,15 @@ class StemSeparator:
         """
         Run Demucs on a loop WAV and write stem WAVs into stems_dir.
 
-        Files are named ``{basename}_drums.wav``, etc.
+        Files are named ``{basename}/{stem_name}.wav`` (stems in subdirectories).
         """
         loop_path = Path(loop_path)
         stems_dir = Path(stems_dir)
         stems_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create loop-specific subdirectory
+        loop_stems_dir = stems_dir / basename
+        loop_stems_dir.mkdir(parents=True, exist_ok=True)
 
         _origin, stems = self._separator.separate_audio_file(loop_path)
         written: dict[str, Path] = {}
@@ -55,7 +59,7 @@ class StemSeparator:
             audio = stems[name].detach().cpu().numpy()
             if audio.ndim == 2:
                 audio = audio.T  # (samples, channels)
-            path = stems_dir / f"{basename}_{name}.wav"
+            path = loop_stems_dir / f"{name}.wav"
             sf.write(path, audio.astype(np.float32, copy=False), sr)
             written[name] = path
 
@@ -71,7 +75,7 @@ def separate_loops(
     on_progress: Callable[[str], None] | None = None,
 ) -> list[dict]:
     """
-    For each exported loop, write stems into ``{track_dir}/stems/``.
+    For each exported loop, write stems into ``{track_dir}/stems/{basename}/``.
 
     Mutates and returns the rows, adding ``stems_dir`` and ``stems`` fields.
     """
@@ -86,6 +90,7 @@ def separate_loops(
         if on_progress:
             on_progress(loop_path.name)
         written = separator.separate_file(loop_path, stems_dir, basename)
-        row["stems_dir"] = str(stems_dir)
+        # Update stems_dir to point to the loop-specific directory
+        row["stems_dir"] = str(stems_dir / basename)
         row["stems"] = {name: str(path) for name, path in written.items()}
     return loop_rows
