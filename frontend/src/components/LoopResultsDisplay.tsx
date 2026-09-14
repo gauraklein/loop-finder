@@ -157,7 +157,10 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
             <div className="loop-actions">
               <div className="action-group">
                 <button
-                  onClick={() => playPreview(loop.preview_url)}
+                  onClick={() => {
+                    const previewUrl = `${process.env.REACT_APP_API_URL}/api/loop/${taskId}/${loop.filename}`;
+                    playPreview(previewUrl);
+                  }}
                   className="preview-button"
                   title="Play preview"
                 >
@@ -165,7 +168,10 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
                 </button>
 
                 <button
-                  onClick={() => downloadFile(loop.preview_url, loop.filename)}
+                  onClick={() => {
+                    const downloadUrl = `${process.env.REACT_APP_API_URL}/api/loop/${taskId}/${loop.filename}`;
+                    downloadFile(downloadUrl, loop.filename);
+                  }}
                   className="download-button"
                   title="Download loop file"
                 >
@@ -180,7 +186,10 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
                     {Object.keys(loop.stems).map((stemName) => (
                       <button
                         key={stemName}
-                        onClick={() => downloadFile(loop.stems![stemName], `${loop.basename || loop.filename.replace('.wav', '')}_${stemName}.wav`)}
+                        onClick={() => {
+                          const stemUrl = `${process.env.REACT_APP_API_URL}/api/stem/${taskId}/${loop.basename || loop.filename.replace('.wav', '')}/${stemName}`;
+                          downloadFile(stemUrl, `${loop.basename || loop.filename.replace('.wav', '')}_${stemName}.wav`);
+                        }}
                         className="stem-button"
                         title={`Download ${stemName} stem`}
                       >

@@ -303,21 +303,23 @@ async def get_loop_file(task_id: str, filename: str):
         loops_dir = Path(task["result"]["loops_dir"]) if task["result"] and task["result"].get("loops_dir") else None
     else:
         # Fallback to checking filesystem for completed tasks
-        loops_dir = RESULTS_DIR / task_id / "loops"
-        if not loops_dir.exists():
+        task_dir = RESULTS_DIR / task_id
+        if not task_dir.exists():
             raise HTTPException(status_code=404, detail="Task not found or not completed yet")
+
+        # Find the loop file by searching in track subdirectories
+        loop_files = list(task_dir.glob("*/loops/" + filename))
+        if len(loop_files) != 1:
+            raise HTTPException(status_code=404, detail="Task not found or not completed yet")
+
+        file_path = loop_files[0]
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Loop file not found")
 
         # Verify it's a completed task by checking if report exists
-        report_path = RESULTS_DIR / task_id / "report.json"
+        report_path = task_dir / "report.json"
         if not report_path.exists():
             raise HTTPException(status_code=404, detail="Task not found or not completed yet")
-
-    if not loops_dir:
-        raise HTTPException(status_code=404, detail="Loops directory not found")
-
-    file_path = loops_dir / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Loop file not found")
 
     return FileResponse(
         path=str(file_path),
@@ -341,22 +343,24 @@ async def get_stem_file(task_id: str, loop_basename: str, stem_name: str):
         stems_base = Path(task["result"]["stems_dir"]) if task["result"] and task["result"].get("stems_dir") else None
     else:
         # Fallback to checking filesystem for completed tasks
-        stems_base = RESULTS_DIR / task_id / "stems"
-        if not stems_base.exists():
+        task_dir = RESULTS_DIR / task_id
+        if not task_dir.exists():
             raise HTTPException(status_code=404, detail="Task not found, not completed yet, or no stems generated")
 
+        # Find the stem file by searching in track subdirectories
+        stem_files = list(task_dir.glob("*/stems/" + loop_basename + "/" + stem_name + ".wav"))
+        if len(stem_files) != 1:
+            raise HTTPException(status_code=404, detail="Task not found, not completed yet, or no stems generated")
+
+        file_path = stem_files[0]
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Stem file not found")
+
         # Verify it's a completed task by checking if report and loops exist
-        report_path = RESULTS_DIR / task_id / "report.json"
-        loops_dir = RESULTS_DIR / task_id / "loops"
-        if not report_path.exists() or not loops_dir.exists():
+        report_path = task_dir / "report.json"
+        loops_dirs = list(task_dir.glob("*/loops"))
+        if not report_path.exists() or len(loops_dirs) == 0:
             raise HTTPException(status_code=404, detail="Task not found or not completed yet")
-
-    if not stems_base:
-        raise HTTPException(status_code=404, detail="Stems directory not found")
-
-    file_path = stems_base / loop_basename / f"{stem_name}.wav"
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Stem file not found")
 
     return FileResponse(
         path=str(file_path),
