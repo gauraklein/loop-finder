@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import AudioPlayer from './audio/AudioPlayer';
 import { getTaskStatus } from '../services/apiService';
 
 interface LoopResult {
@@ -24,6 +25,7 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isGeneratingZip, setIsGeneratingZip] = useState<boolean>(false);
+  const [playingPreview, setPlayingPreview] = useState<string | null>(null); // ID of currently playing preview
 
   useEffect(() => {
     const checkStatus = async () => {
@@ -98,6 +100,10 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
     document.body.removeChild(link);
   };
 
+  const handlePreviewEnd = () => {
+    setPlayingPreview(null);
+  };
+
   return (
     <div className="loop-results">
       <div className="results-header">
@@ -159,12 +165,13 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
                 <button
                   onClick={() => {
                     const previewUrl = `${process.env.REACT_APP_API_URL}/api/loop/${taskId}/${loop.filename}`;
-                    playPreview(previewUrl);
+                    setPlayingPreview(loop.id);
                   }}
                   className="preview-button"
                   title="Play preview"
+                  disabled={playingPreview !== null}
                 >
-                  ▶️
+                  {playingPreview === loop.id ? '⏳' : '▶️'}
                 </button>
 
                 <button
@@ -178,6 +185,15 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
                   💾
                 </button>
               </div>
+
+              {playingPreview === loop.id && (
+                <div className="audio-player-wrapper">
+                  <AudioPlayer
+                    previewUrl={`${process.env.REACT_APP_API_URL}/api/loop/${taskId}/${loop.filename}`}
+                    onEnd={handlePreviewEnd}
+                  />
+                </div>
+              )}
 
               {loop.stems && (
                 <div className="stem-actions">
@@ -205,39 +221,6 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
       </div>
     </div>
   );
-};
-
-// Helper function to play audio preview with better error handling
-const playPreview = async (previewUrl: string) => {
-  console.log('Attempting to play:', previewUrl);
-
-  try {
-    const audio = new Audio(previewUrl);
-
-    audio.addEventListener('canplaythrough', () => {
-      console.log('Audio ready to play');
-    });
-
-    audio.addEventListener('error', (e) => {
-      console.error('Audio element error:', e);
-      alert('Failed to load audio preview. Check console for details.');
-    });
-
-    const playPromise = audio.play();
-
-    if (playPromise !== undefined) {
-      playPromise.then(_ => {
-        console.log('Playback started successfully');
-      }).catch(error => {
-        console.error('Autoplay prevented:', error);
-        alert('Click anywhere on the page first to enable audio playback, then try again.');
-      });
-    }
-  } catch (err) {
-    console.error('Failed to create audio player:', err);
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    alert('Error creating audio player: ' + message);
-  }
 };
 
 export default LoopResultsDisplay;

@@ -103,7 +103,7 @@ const FileUrlInput: React.FC<FileUrlInputProps> = ({ onAnalysisStart }) => {
           </div>
         </div>
 
-        <button type="submit" disabled={isProcessing}>
+        <button type="submit" disabled={isProcessing} className="btn-primary">
           {isProcessing ? 'Processing...' : 'Analyze Audio'}
         </button>
       </form>
