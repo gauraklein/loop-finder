@@ -23,6 +23,7 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
   const [taskStatus, setTaskStatus] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isGeneratingZip, setIsGeneratingZip] = useState<boolean>(false);
 
   useEffect(() => {
     const checkStatus = async () => {
@@ -78,10 +79,67 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
   }
 
   const loops: LoopResult[] = taskStatus.result.loops;
+  const hasStems = taskStatus.result?.stems_dir !== null;
+  const reportUrl = taskStatus.result?.report_path
+    ? `/api/report/${taskId}`
+    : null;
+
+  // Generate ZIP download URL (would need backend endpoint)
+  const zipUrl = hasStems
+    ? `/api/zip-loops/${taskId}`
+    : `/api/zip-loops/${taskId}?stems=false`;
+
+  const downloadFile = (url: string, filename: string) => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
     <div className="loop-results">
-      <h2>Detected Loops ({loops.length} found)</h2>
+      <div className="results-header">
+        <h2>Detected Loops ({loops.length} found)</h2>
+        <div className="export-buttons">
+          {reportUrl && (
+            <button
+              onClick={() => downloadFile(reportUrl, `report-${taskId}.json`)}
+              className="btn-secondary"
+            >
+              📄 Download Report
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setIsGeneratingZip(true);
+              // In a real implementation, this would call a backend endpoint
+              // to generate and serve a ZIP file
+              alert('ZIP generation would be implemented here - for now, use individual download buttons');
+              setIsGeneratingZip(false);
+            }}
+            disabled={isGeneratingZip}
+            className={isGeneratingZip ? 'btn-disabled' : 'btn-primary'}
+          >
+            {isGeneratingZip ? 'Generating...' : '📦 Download All Loops'}
+          </button>
+          {hasStems && (
+            <button
+              onClick={() => {
+                setIsGeneratingZip(true);
+                alert('Stem ZIP generation would be implemented here');
+                setIsGeneratingZip(false);
+              }}
+              disabled={isGeneratingZip}
+              className="btn-secondary"
+            >
+              📦 Download All Stems
+            </button>
+          )}
+        </div>
+      </div>
+
       <div className="loops-grid">
         {loops.map((loop) => (
           <div key={loop.id} className="loop-card">
@@ -97,12 +155,41 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
             </div>
 
             <div className="loop-actions">
-              <button
-                onClick={() => playPreview(loop.preview_url)}
-                className="preview-button"
-              >
-                ▶️ Preview
-              </button>
+              <div className="action-group">
+                <button
+                  onClick={() => playPreview(loop.preview_url)}
+                  className="preview-button"
+                  title="Play preview"
+                >
+                  ▶️
+                </button>
+
+                <button
+                  onClick={() => downloadFile(loop.preview_url, loop.filename)}
+                  className="download-button"
+                  title="Download loop file"
+                >
+                  💾
+                </button>
+              </div>
+
+              {loop.stems && (
+                <div className="stem-actions">
+                  <strong>Stems:</strong>
+                  <div className="stem-buttons">
+                    {Object.keys(loop.stems).map((stemName) => (
+                      <button
+                        key={stemName}
+                        onClick={() => downloadFile(loop.stems![stemName], `${loop.basename || loop.filename.replace('.wav', '')}_${stemName}.wav`)}
+                        className="stem-button"
+                        title={`Download ${stemName} stem`}
+                      >
+                        {stemName.charAt(0).toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -111,14 +198,36 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
   );
 };
 
-// Helper function to play audio preview
+// Helper function to play audio preview with better error handling
 const playPreview = async (previewUrl: string) => {
+  console.log('Attempting to play:', previewUrl);
+
   try {
     const audio = new Audio(previewUrl);
-    await audio.play();
+
+    audio.addEventListener('canplaythrough', () => {
+      console.log('Audio ready to play');
+    });
+
+    audio.addEventListener('error', (e) => {
+      console.error('Audio element error:', e);
+      alert('Failed to load audio preview. Check console for details.');
+    });
+
+    const playPromise = audio.play();
+
+    if (playPromise !== undefined) {
+      playPromise.then(_ => {
+        console.log('Playback started successfully');
+      }).catch(error => {
+        console.error('Autoplay prevented:', error);
+        alert('Click anywhere on the page first to enable audio playback, then try again.');
+      });
+    }
   } catch (err) {
-    console.error('Failed to play preview:', err);
-    // In a real app, show user-friendly error
+    console.error('Failed to create audio player:', err);
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    alert('Error creating audio player: ' + message);
   }
 };
 

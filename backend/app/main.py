@@ -5,7 +5,7 @@ audio analysis, and loop detection.
 """
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import os
@@ -16,6 +16,8 @@ from typing import Optional, List, Dict, Any
 import asyncio
 import json
 import sys
+import zipfile
+import io
 
 # ===== CRITICAL: Add src directory to Python path BEFORE any loop_finder imports =====
 # This ensures we can import the local loop_finder package
@@ -291,16 +293,25 @@ async def get_task_status(task_id: str):
 @app.get("/api/loop/{task_id}/{filename}")
 async def get_loop_file(task_id: str, filename: str):
     """Serve a loop WAV file for audio playback."""
-    # Find the task to verify it exists and get the loops directory
-    if task_id not in tasks:
-        raise HTTPException(status_code=404, detail="Task not found")
+    # First check if task is in memory
+    if task_id in tasks:
+        task = tasks[task_id]
+        if task["status"] != "completed":
+            raise HTTPException(status_code=400, detail="Task not completed yet")
 
-    task = tasks[task_id]
-    if task["status"] != "completed":
-        raise HTTPException(status_code=400, detail="Task not completed yet")
+        # Construct file path from memory
+        loops_dir = Path(task["result"]["loops_dir"]) if task["result"] and task["result"].get("loops_dir") else None
+    else:
+        # Fallback to checking filesystem for completed tasks
+        loops_dir = RESULTS_DIR / task_id / "loops"
+        if not loops_dir.exists():
+            raise HTTPException(status_code=404, detail="Task not found or not completed yet")
 
-    # Construct file path
-    loops_dir = Path(task["result"]["loops_dir"]) if task["result"] and task["result"].get("loops_dir") else None
+        # Verify it's a completed task by checking if report exists
+        report_path = RESULTS_DIR / task_id / "report.json"
+        if not report_path.exists():
+            raise HTTPException(status_code=404, detail="Task not found or not completed yet")
+
     if not loops_dir:
         raise HTTPException(status_code=404, detail="Loops directory not found")
 
@@ -317,19 +328,29 @@ async def get_loop_file(task_id: str, filename: str):
 @app.get("/api/stem/{task_id}/{loop_basename}/{stem_name}")
 async def get_stem_file(task_id: str, loop_basename: str, stem_name: str):
     """Serve a stem WAV file for audio playback."""
-    # Find the task to verify it exists and get the stems directory
-    if task_id not in tasks:
-        raise HTTPException(status_code=404, detail="Task not found")
+    # First check if task is in memory
+    if task_id in tasks:
+        task = tasks[task_id]
+        if task["status"] != "completed":
+            raise HTTPException(status_code=400, detail="Task not completed yet")
 
-    task = tasks[task_id]
-    if task["status"] != "completed":
-        raise HTTPException(status_code=400, detail="Task not completed yet")
+        if not task.get("stems"):
+            raise HTTPException(status_code=400, detail="Stems not generated for this task")
 
-    if not task.get("stems"):
-        raise HTTPException(status_code=400, detail="Stems not generated for this task")
+        # Construct file path from memory
+        stems_base = Path(task["result"]["stems_dir"]) if task["result"] and task["result"].get("stems_dir") else None
+    else:
+        # Fallback to checking filesystem for completed tasks
+        stems_base = RESULTS_DIR / task_id / "stems"
+        if not stems_base.exists():
+            raise HTTPException(status_code=404, detail="Task not found, not completed yet, or no stems generated")
 
-    # Construct file path
-    stems_base = Path(task["result"]["stems_dir"]) if task["result"] and task["result"].get("stems_dir") else None
+        # Verify it's a completed task by checking if report and loops exist
+        report_path = RESULTS_DIR / task_id / "report.json"
+        loops_dir = RESULTS_DIR / task_id / "loops"
+        if not report_path.exists() or not loops_dir.exists():
+            raise HTTPException(status_code=404, detail="Task not found or not completed yet")
+
     if not stems_base:
         raise HTTPException(status_code=404, detail="Stems directory not found")
 
@@ -341,6 +362,112 @@ async def get_stem_file(task_id: str, loop_basename: str, stem_name: str):
         path=str(file_path),
         media_type="audio/wav",
         filename=f"{loop_basename}_{stem_name}.wav"
+    )
+
+@app.get("/api/report/{task_id}")
+async def get_report_file(task_id: str):
+    """Serve the analysis report JSON file."""
+    # First check if task is in memory
+    if task_id in tasks:
+        task = tasks[task_id]
+        if task["status"] != "completed":
+            raise HTTPException(status_code=400, detail="Task not completed yet")
+
+        if not task.get("result") or not task["result"].get("report_path"):
+            raise HTTPException(status_code=404, detail="Report not found")
+
+        report_path = Path(task["result"]["report_path"])
+    else:
+        # Fallback to checking filesystem for completed tasks
+        report_path = RESULTS_DIR / task_id / "report.json"
+        if not report_path.exists():
+            raise HTTPException(status_code=404, detail="Task not found or report not available")
+
+        # Verify it's a completed task by checking if loops directory exists
+        loops_dir = RESULTS_DIR / task_id / "loops"
+        if not loops_dir.exists():
+            raise HTTPException(status_code=400, detail="Task not completed yet")
+
+    if not report_path.exists():
+        raise HTTPException(status_code=404, detail="Report file not found")
+
+    return FileResponse(
+        path=str(report_path),
+        media_type="application/json",
+        filename=f"report-{task_id}.json"
+    )
+
+@app.get("/api/zip-loops/{task_id}")
+async def get_loops_zip(task_id: str, stems: bool = False):
+    """Generate and serve a ZIP file containing all loops (and optionally stems)."""
+    # First check if task is in memory
+    if task_id in tasks:
+        task = tasks[task_id]
+        if task["status"] != "completed":
+            raise HTTPException(status_code=400, detail="Task not completed yet")
+
+        if not task.get("result"):
+            raise HTTPException(status_code=404, detail="Task result not found")
+    else:
+        # Fallback to checking filesystem for completed tasks
+        # Verify it's a completed task by checking if report and loops directory exist
+        report_path = RESULTS_DIR / task_id / "report.json"
+        loops_dir = RESULTS_DIR / task_id / "loops"
+        if not report_path.exists() or not loops_dir.exists():
+            raise HTTPException(status_code=404, detail="Task not found or not completed yet")
+
+        # Create a minimal task-like object for the ZIP generation logic
+        task = {
+            "result": {
+                "report_path": str(report_path),
+                "loops_dir": str(loops_dir),
+                "stems_dir": str(RESULTS_DIR / task_id / "stems") if (RESULTS_DIR / task_id / "stems").exists() else None
+            },
+            "stems": (RESULTS_DIR / task_id / "stems").exists()
+        }
+
+    # Create a ZIP file in memory
+    zip_buffer = io.BytesIO()
+
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        # Add report file
+        if task["result"].get("report_path"):
+            report_path = Path(task["result"]["report_path"])
+            if report_path.exists():
+                zip_file.write(report_path, f"report-{task_id}.json")
+
+        # Add loop files
+        loops_dir = Path(task["result"]["loops_dir"]) if task["result"].get("loops_dir") else None
+        if loops_dir and loops_dir.exists():
+            for loop_file in loops_dir.glob("*.wav"):
+                zip_file.write(loop_file, f"loops/{loop_file.name}")
+
+        # Add stem files if requested and available
+        if stems and task.get("stems") and task["result"].get("stems_dir"):
+            stems_dir = Path(task["result"]["stems_dir"])
+            if stems_dir.exists():
+                for stem_dir in stems_dir.iterdir():
+                    if stem_dir.is_dir():
+                        for stem_file in stem_dir.glob("*.wav"):
+                            # Store in ZIP as: stems/{loop_basename}/{stem_file}
+                            arcname = f"stems/{stem_dir.name}/{stem_file.name}"
+                            zip_file.write(stem_file, arcname)
+
+    # Reset buffer position to beginning
+    zip_buffer.seek(0)
+
+    # Generate filename
+    zip_filename = f"loop-finder-results-{task_id}"
+    if stems:
+        zip_filename += "-with-stems"
+    zip_filename += ".zip"
+
+    return StreamingResponse(
+        io.BytesIO(zip_buffer.read()),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename={zip_filename}"
+        }
     )
 
 if __name__ == "__main__":
