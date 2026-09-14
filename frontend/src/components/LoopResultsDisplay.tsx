@@ -26,8 +26,11 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
   const [error, setError] = useState<string | null>(null);
   const [isGeneratingZip, setIsGeneratingZip] = useState<boolean>(false);
   const [playingPreview, setPlayingPreview] = useState<string | null>(null); // ID of currently playing preview
+  const [waveformData, setWaveformData] = useState<Map<string, ArrayBuffer | null>>(new Map());
 
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+
     const checkStatus = async () => {
       try {
         setLoading(true);
@@ -35,22 +38,45 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
         setTaskStatus(status);
         setLoading(false);
 
-        // Poll for updates if still processing
+        // Schedule next check ONLY if still processing
         if (status.status === 'analyzing' || status.status === 'processing_url' || status.status === 'downloading') {
-          setTimeout(checkStatus, 2000);
+          // Clear any existing timeout
+          if (timeoutId) clearTimeout(timeoutId);
+          // Schedule next check in 2 seconds
+          timeoutId = setTimeout(checkStatus, 2000);
+        } else {
+          // Task completed/failed - clear any pending timeouts
+          if (timeoutId) clearTimeout(timeoutId);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to fetch task status');
         setLoading(false);
+        // Still schedule retry on error (with backoff in production)
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = setTimeout(checkStatus, 2000);
       }
     };
 
+    // Start polling
     checkStatus();
 
-    // Set up interval polling
-    const interval = setInterval(checkStatus, 5000);
-    return () => clearInterval(interval);
+    // Cleanup on unmount
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [taskId]);
+
+  // Draw waveforms when data is available
+  useEffect(() => {
+    waveformData.forEach((data, loopId) => {
+      if (data !== null) {
+        const canvas = document.querySelector(`canvas[data-loop-id="${loopId}"]`);
+        if (canvas) {
+          drawWaveform(canvas as HTMLCanvasElement, data);
+        }
+      }
+    });
+  }, [waveformData]);
 
   if (loading) {
     return <div className="loop-results">Analyzing audio... Please wait.</div>;
@@ -86,11 +112,6 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
     ? `/api/report/${taskId}`
     : null;
 
-  // Generate ZIP download URL (would need backend endpoint)
-  const zipUrl = hasStems
-    ? `/api/zip-loops/${taskId}`
-    : `/api/zip-loops/${taskId}?stems=false`;
-
   const downloadFile = (url: string, filename: string) => {
     const link = document.createElement('a');
     link.href = url;
@@ -102,6 +123,92 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
 
   const handlePreviewEnd = () => {
     setPlayingPreview(null);
+  };
+
+  // Function to fetch and decode audio data for waveform generation
+  const fetchWaveformData = async (loop: LoopResult): Promise<ArrayBuffer | null> => {
+    try {
+      // Check if we already have this data
+      const cached = waveformData.get(loop.id);
+      if (cached !== undefined) {
+        return cached;
+      }
+
+      const response = await fetch(`${process.env.REACT_APP_API_URL}/api/loop/${taskId}/${loop.filename}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch audio: ${response.statusText}`);
+      }
+      
+      const arrayBuffer = await response.arrayBuffer();
+      // Update cache
+      const newMap = new Map(waveformData);
+      newMap.set(loop.id, arrayBuffer);
+      setWaveformData(newMap);
+      return arrayBuffer;
+    } catch (err) {
+      console.error('Error fetching waveform data:', err);
+      // Cache null to prevent repeated failed requests
+      const newMap = new Map(waveformData);
+      newMap.set(loop.id, null);
+      setWaveformData(newMap);
+      return null;
+    }
+  };
+
+  // Function to draw waveform on canvas
+  const drawWaveform = (canvas: HTMLCanvasElement, arrayBuffer: ArrayBuffer) => {
+    if (!canvas || !arrayBuffer) return;
+
+    const canvasCtx = canvas.getContext('2d');
+    if (!canvasCtx) return;
+
+    // Clear canvas
+    canvasCtx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Set up audio context
+    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    
+    // Decode audio data
+    audioCtx.decodeAudioData(arrayBuffer).then((decodedData) => {
+      const channelData = decodedData.getChannelData(0); // Use first channel
+      const canvasWidth = canvas.width;
+      const canvasHeight = canvas.height;
+      const mid = canvasHeight / 2;
+
+      // Draw waveform
+      canvasCtx.lineWidth = 1;
+      canvasCtx.strokeStyle = '#6366f1'; // Primary color
+      canvasCtx.beginPath();
+
+      const sliceWidth = Math.max(1, channelData.length / canvasWidth);
+      let x = 0;
+
+      for (let i = 0; i < channelData.length; i += sliceWidth) {
+        const sample = channelData[i];
+        const y = sample * mid;
+        
+        if (i === 0) {
+          canvasCtx.moveTo(x, mid + y);
+        } else {
+          canvasCtx.lineTo(x, mid + y);
+        }
+        x += 1;
+      }
+
+      canvasCtx.lineTo(canvasWidth, mid);
+      canvasCtx.stroke();
+      
+      // Close the audio context to prevent resource leaks
+      audioCtx.close();
+    }).catch((err) => {
+      console.error('Error decoding audio data:', err);
+      // Try to close the audio context if it was created
+      try {
+        audioCtx.close();
+      } catch (e) {
+        // Ignore errors on close
+      }
+    });
   };
 
   return (
@@ -160,12 +267,23 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
               <p><strong>Time:</strong> {loop.start_time.toFixed(2)}s → {loop.end_time.toFixed(2)}s</p>
             </div>
 
+            {/* Waveform container */}
+            <div className="waveform-container">
+              <canvas 
+                data-loop-id={loop.id}
+                className="waveform-canvas"
+                width="100"
+                height="40"
+              />
+            </div>
+
             <div className="loop-actions">
               <div className="action-group">
                 <button
                   onClick={() => {
-                    const previewUrl = `${process.env.REACT_APP_API_URL}/api/loop/${taskId}/${loop.filename}`;
                     setPlayingPreview(loop.id);
+                    // Fetch waveform data when preparing to play
+                    fetchWaveformData(loop);
                   }}
                   className="preview-button"
                   title="Play preview"

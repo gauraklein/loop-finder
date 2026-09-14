@@ -14,6 +14,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ previewUrl, onEnd }) => {
   const [volume, setVolume] = useState(0.7);
   const [isSeeking, setIsSeeking] = useState(false);
   const [isVolumeDragging, setIsVolumeDragging] = useState(false);
+  const [isLooping, setIsLooping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -22,45 +23,53 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ previewUrl, onEnd }) => {
   
   useEffect(() => {
     if (!previewUrl) return;
-    
+
     const audio = new Audio(previewUrl);
     audioRef.current = audio;
     audio.volume = volume;
-    
+    audio.loop = isLooping;
+
     const handleLoadedMetadata = () => {
       setIsLoaded(true);
       setDuration(audio.duration);
     };
-    
+
     const handleTimeUpdate = () => {
       if (!isSeeking && audioRef.current) {
         setCurrentTime(audioRef.current.currentTime);
       }
     };
-    
+
     const handleEnded = () => {
       setIsPlaying(false);
       setCurrentTime(0);
       if (onEnd) onEnd();
     };
-    
+
     const handleError = () => {
       setError('Failed to load audio preview');
       setIsPlaying(false);
     };
-    
+
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
     audio.addEventListener('timeupdate', handleTimeUpdate);
     audio.addEventListener('ended', handleEnded);
     audio.addEventListener('error', handleError);
-    
+
     return () => {
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
       audio.removeEventListener('timeupdate', handleTimeUpdate);
       audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('error', handleError);
     };
-  }, [previewUrl, volume, onEnd]);
+  }, [previewUrl, volume, onEnd, isLooping, isSeeking]);
+  
+  // Update loop property when isLooping changes
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.loop = isLooping;
+    }
+  }, [isLooping]);
   
   const getClientX = (e: React.MouseEvent<HTMLDivElement, MouseEvent> | React.TouchEvent<HTMLDivElement>): number => {
     if ('touches' in e && e.touches !== undefined && e.touches.length > 0) {
@@ -162,6 +171,10 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ previewUrl, onEnd }) => {
     }
   };
   
+  const handleLoopToggle = () => {
+    setIsLooping(!isLooping);
+  };
+  
   if (error && !isLoaded) {
     return (
       <div className="audio-player-error">
@@ -222,8 +235,8 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ previewUrl, onEnd }) => {
               <div
                 ref={progressRef}
                 className="audio-player-progress-track"
-                onMouseDown={handleSeek}
-                onTouchStart={handleSeek}
+                onMouseDown={(e) => { e.preventDefault(); handleSeek(e); }}
+                onTouchStart={(e) => { e.preventDefault(); handleSeek(e); }}
                 onMouseUp={handleSeekEnd}
                 onTouchEnd={handleSeekEnd}
                 onMouseLeave={handleSeekEnd}
@@ -273,6 +286,17 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ previewUrl, onEnd }) => {
                 <div className="audio-player-volume-thumb"></div>
               )}
             </div>
+          </div>
+          
+          <div className="audio-player-loop">
+            <button 
+              onClick={handleLoopToggle}
+              className={`btn-icon ${isLooping ? 'btn-loop-active' : ''}`}
+              title={isLooping ? 'Disable Loop' : 'Enable Loop'}
+            >
+              {isLooping ? '🔁' : '🔂'}
+            </button>
+            <span className="loop-label">Loop</span>
           </div>
         </>
       )}
