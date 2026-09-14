@@ -301,6 +301,12 @@ async def get_loop_file(task_id: str, filename: str):
 
         # Construct file path from memory
         loops_dir = Path(task["result"]["loops_dir"]) if task["result"] and task["result"].get("loops_dir") else None
+        if not loops_dir:
+            raise HTTPException(status_code=404, detail="Loops directory not found")
+
+        file_path = loops_dir / filename
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Loop file not found")
     else:
         # Fallback to checking filesystem for completed tasks
         task_dir = RESULTS_DIR / task_id
@@ -341,6 +347,12 @@ async def get_stem_file(task_id: str, loop_basename: str, stem_name: str):
 
         # Construct file path from memory
         stems_base = Path(task["result"]["stems_dir"]) if task["result"] and task["result"].get("stems_dir") else None
+        if not stems_base:
+            raise HTTPException(status_code=404, detail="Stems directory not found")
+
+        file_path = stems_base / loop_basename / f"{stem_name}.wav"
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Stem file not found")
     else:
         # Fallback to checking filesystem for completed tasks
         task_dir = RESULTS_DIR / task_id
