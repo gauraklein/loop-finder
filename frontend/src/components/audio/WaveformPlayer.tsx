@@ -23,6 +23,17 @@ interface WaveformPlayerProps {
   label?: string;
 }
 
+// Browsers cap how many real AudioContexts can be open at once (a results
+// page can easily render 100+ WaveformPlayers between loops and stems), so
+// every instance shares this one context instead of creating its own.
+let sharedAudioCtx: AudioContext | null = null;
+const getSharedAudioContext = (): AudioContext => {
+  if (!sharedAudioCtx) {
+    sharedAudioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  }
+  return sharedAudioCtx;
+};
+
 const BAR_COUNT = 100;
 const PLAYED_COLOR = '#FF00FF';
 const UNPLAYED_COLOR = '#2D1B4E';
@@ -59,7 +70,6 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
 
   // Reverse playback needs the decoded PCM data - the <audio> element has no
   // way to play backwards, so we drive it through Web Audio instead.
-  const audioCtxRef = useRef<AudioContext | null>(null);
   const decodedBufferRef = useRef<AudioBuffer | null>(null);
   const reversedBufferRef = useRef<AudioBuffer | null>(null);
   const reverseSourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -97,19 +107,12 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
     });
   };
 
-  const getAudioCtx = () => {
-    if (!audioCtxRef.current) {
-      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-    }
-    return audioCtxRef.current;
-  };
-
   const getReversedBuffer = (): AudioBuffer | null => {
     const decoded = decodedBufferRef.current;
     if (!decoded) return null;
     if (reversedBufferRef.current) return reversedBufferRef.current;
 
-    const ctx = getAudioCtx();
+    const ctx = getSharedAudioContext();
     const reversed = ctx.createBuffer(decoded.numberOfChannels, decoded.length, decoded.sampleRate);
     for (let channel = 0; channel < decoded.numberOfChannels; channel++) {
       const source = decoded.getChannelData(channel);
@@ -141,8 +144,7 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
   };
 
   const tickReverseProgress = () => {
-    const ctx = audioCtxRef.current;
-    if (!ctx) return;
+    const ctx = getSharedAudioContext();
     const elapsed = ctx.currentTime - reverseStartCtxTimeRef.current;
     const wrapped = isLooping && duration ? elapsed % duration : elapsed;
     const clamped = Math.min(Math.max(wrapped, 0), duration);
@@ -152,8 +154,8 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
 
   const playReverseFrom = (offsetSeconds: number) => {
     const buffer = getReversedBuffer();
-    const ctx = audioCtxRef.current;
-    if (!buffer || !ctx) return;
+    if (!buffer) return;
+    const ctx = getSharedAudioContext();
 
     stopReversePlayback();
     if (ctx.state === 'suspended') ctx.resume();
@@ -227,7 +229,7 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
         const response = await fetch(audioUrl, { signal: controller.signal });
         if (!response.ok) throw new Error('Failed to fetch audio');
         const arrayBuffer = await response.arrayBuffer();
-        const ctx = getAudioCtx();
+        const ctx = getSharedAudioContext();
         const decoded = await ctx.decodeAudioData(arrayBuffer);
         decodedBufferRef.current = decoded;
         reversedBufferRef.current = null;
@@ -244,11 +246,11 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioUrl]);
 
-  // Tear down the persistent AudioContext and any in-flight reverse playback on unmount
+  // Stop any in-flight reverse playback on unmount (the AudioContext itself
+  // is shared across all players, so it isn't closed here)
   useEffect(() => {
     return () => {
       stopReversePlayback();
-      audioCtxRef.current?.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
