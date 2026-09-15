@@ -1,0 +1,98 @@
+.waveform-player {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--border-light);
+}
+
+.waveform-play-button {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  background-color: var(--accent-color);
+  color: white;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.waveform-play-button:hover {
+  background-color: var(--accent-dark);
+  transform: scale(1.05);
+}
+
+.waveform-scrubber {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 64px;
+  cursor: pointer;
+}
+
+.waveform-bars-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.waveform-time {
+  position: absolute;
+  bottom: 2px;
+  right: 4px;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  background-color: var(--background-white);
+  opacity: 0.85;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+}
+
+.waveform-icon-button {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background-color: var(--background-light);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.waveform-icon-button:hover {
+  background-color: var(--secondary-color);
+  color: white;
+  transform: scale(1.05);
+}
+
+.waveform-icon-button.is-active {
+  background-color: var(--secondary-color);
+  color: white;
+}
+
+.waveform-error {
+  font-size: 0.75rem;
+  color: #991b1b;
+}
+
+@media (max-width: 480px) {
+  .waveform-player {
+    flex-wrap: wrap;
+  }
+
+  .waveform-scrubber {
+    order: 3;
+    flex-basis: 100%;
+  }
+}
