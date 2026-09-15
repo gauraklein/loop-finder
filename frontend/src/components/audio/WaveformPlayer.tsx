@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { downloadFile } from '../../utils/download';
+import { RepeatIcon, DownloadIcon } from '../icons';
 
 interface WaveformPlayerProps {
   audioUrl: string;
@@ -186,7 +187,7 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
         className={`${iconButtonClasses} ${isLooping ? 'border-cyan bg-cyan text-black shadow-glow-cyan' : ''}`}
         title={isLooping ? 'Disable loop' : 'Enable loop'}
       >
-        🔁
+        <RepeatIcon className="h-4 w-4" />
       </button>
 
       <button
@@ -194,7 +195,7 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
         className={iconButtonClasses}
         title="Download loop file"
       >
-        💾
+        <DownloadIcon className="h-4 w-4" />
       </button>
 
       {error && <span className="basis-full font-mono text-xs text-magenta">{error}</span>}

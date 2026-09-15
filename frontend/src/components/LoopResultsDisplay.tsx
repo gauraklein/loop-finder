@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import WaveformPlayer from './audio/WaveformPlayer';
 import { getTaskStatus } from '../services/apiService';
 import { downloadFile } from '../utils/download';
+import { DownloadIcon } from './icons';
 
 interface LoopResult {
   id: string;
@@ -116,7 +117,9 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
         <div className="flex flex-wrap gap-3">
           {reportUrl && (
             <button onClick={() => downloadFile(reportUrl, `report-${taskId}.json`)} className={btnOutline}>
-              <span className="inline-block skew-x-12 transform">Download Report</span>
+              <span className="inline-flex skew-x-12 transform items-center gap-2">
+                <DownloadIcon className="h-4 w-4" /> Download Report
+              </span>
             </button>
           )}
           <button
@@ -130,7 +133,8 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
             disabled={isGeneratingZip}
             className={btnSecondary}
           >
-            <span className="inline-block skew-x-12 transform">
+            <span className="inline-flex skew-x-12 transform items-center gap-2">
+              <DownloadIcon className="h-4 w-4" />
               {isGeneratingZip ? 'Generating...' : 'Download All Loops'}
             </span>
           </button>
@@ -144,7 +148,9 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
               disabled={isGeneratingZip}
               className={btnOutline}
             >
-              <span className="inline-block skew-x-12 transform">Download All Stems</span>
+              <span className="inline-flex skew-x-12 transform items-center gap-2">
+                <DownloadIcon className="h-4 w-4" /> Download All Stems
+              </span>
             </button>
           )}
         </div>
