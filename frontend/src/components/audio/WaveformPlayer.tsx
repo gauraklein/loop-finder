@@ -383,7 +383,7 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
         </span>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
         <IconButton
           onClick={togglePlay}
           tooltip={isPlaying ? 'Pause' : 'Play'}
