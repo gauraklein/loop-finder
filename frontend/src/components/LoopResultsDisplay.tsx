@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import WaveformPlayer from './audio/WaveformPlayer';
+import WaveformPlayer, { PlaybackProvider } from './audio/WaveformPlayer';
 import { getTaskStatus } from '../services/apiService';
 import { downloadFile } from '../utils/download';
 import { DownloadIcon } from './icons';
@@ -161,6 +161,7 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
         </div>
       </div>
 
+      <PlaybackProvider>
       <div className="grid grid-cols-1 gap-7 p-6 md:grid-cols-2 sm:p-8">
         {loops.map((loop) => (
           <div
@@ -211,6 +212,7 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
           </div>
         ))}
       </div>
+      </PlaybackProvider>
     </div>
   );
 };

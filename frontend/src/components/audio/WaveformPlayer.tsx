@@ -1,6 +1,20 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { downloadFile } from '../../utils/download';
 import { RepeatIcon, DownloadIcon, ReverseIcon } from '../icons';
+
+// Coordinates playback across every WaveformPlayer under a Provider so
+// starting one stops whichever other one is currently playing.
+type StopFn = () => void;
+const PlaybackContext = createContext<{ requestPlay: (stop: StopFn) => void } | null>(null);
+
+export const PlaybackProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const activeStopRef = useRef<StopFn | null>(null);
+  const requestPlay = (stop: StopFn) => {
+    activeStopRef.current?.();
+    activeStopRef.current = stop;
+  };
+  return <PlaybackContext.Provider value={{ requestPlay }}>{children}</PlaybackContext.Provider>;
+};
 
 interface WaveformPlayerProps {
   audioUrl: string;
@@ -38,6 +52,7 @@ const computePeaks = (channelData: Float32Array, barCount: number): number[] => 
 };
 
 const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, downloadFilename, label }) => {
+  const playback = useContext(PlaybackContext);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const peaksRef = useRef<number[] | null>(null);
@@ -162,6 +177,14 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
     reverseRafRef.current = requestAnimationFrame(tickReverseProgress);
   };
 
+  // Fully stop this player, whichever mode it's playing in - handed to the
+  // PlaybackProvider so it can silence this player when another one starts.
+  const stopPlayback = () => {
+    stopReversePlayback();
+    audioRef.current?.pause();
+    setIsPlaying(false);
+  };
+
   // Set up the audio element (forward playback)
   useEffect(() => {
     const audio = new Audio(audioUrl);
@@ -242,6 +265,7 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
         stopReversePlayback();
         setIsPlaying(false);
       } else if (getReversedBuffer()) {
+        playback?.requestPlay(stopPlayback);
         playReverseFrom(duration - currentTime);
         setIsPlaying(true);
       }
@@ -258,7 +282,10 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
       audio.currentTime = currentTime;
       audio
         .play()
-        .then(() => setIsPlaying(true))
+        .then(() => {
+          playback?.requestPlay(stopPlayback);
+          setIsPlaying(true);
+        })
         .catch(() => setError('Playback prevented. Click anywhere to enable audio.'));
     }
   };
