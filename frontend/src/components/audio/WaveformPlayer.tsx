@@ -74,6 +74,7 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
   const reversedBufferRef = useRef<AudioBuffer | null>(null);
   const reverseSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const reverseStartCtxTimeRef = useRef(0);
+  const reverseRateRef = useRef(1);
   const reverseRafRef = useRef<number | null>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -82,6 +83,10 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [semitones, setSemitones] = useState(0);
+
+  // Vinyl-style pitch: shifting playback rate shifts pitch right along with it
+  const playbackRate = Math.pow(2, semitones / 12);
 
   const drawWaveform = () => {
     const canvas = canvasRef.current;
@@ -145,7 +150,7 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
 
   const tickReverseProgress = () => {
     const ctx = getSharedAudioContext();
-    const elapsed = ctx.currentTime - reverseStartCtxTimeRef.current;
+    const elapsed = (ctx.currentTime - reverseStartCtxTimeRef.current) * reverseRateRef.current;
     const wrapped = isLooping && duration ? elapsed % duration : elapsed;
     const clamped = Math.min(Math.max(wrapped, 0), duration);
     setCurrentTime(duration - clamped);
@@ -163,6 +168,7 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.loop = isLooping;
+    source.playbackRate.value = playbackRate;
     source.connect(ctx.destination);
     source.onended = () => {
       if (!isLooping) {
@@ -175,7 +181,8 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
     const clampedOffset = Math.min(Math.max(offsetSeconds, 0), duration || 0);
     source.start(0, clampedOffset);
     reverseSourceRef.current = source;
-    reverseStartCtxTimeRef.current = ctx.currentTime - clampedOffset;
+    reverseStartCtxTimeRef.current = ctx.currentTime - clampedOffset / playbackRate;
+    reverseRateRef.current = playbackRate;
     reverseRafRef.current = requestAnimationFrame(tickReverseProgress);
   };
 
@@ -191,6 +198,11 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
   useEffect(() => {
     const audio = new Audio(audioUrl);
     audioRef.current = audio;
+    // Browsers preserve pitch across playbackRate changes by default - we want
+    // the opposite (vinyl-style: rate change shifts pitch too), so disable it.
+    (audio as any).preservesPitch = false;
+    (audio as any).mozPreservesPitch = false;
+    (audio as any).webkitPreservesPitch = false;
 
     const onLoadedMetadata = () => setDuration(audio.duration);
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
@@ -218,6 +230,22 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
     if (audioRef.current) audioRef.current.loop = isLooping;
     if (reverseSourceRef.current) reverseSourceRef.current.loop = isLooping;
   }, [isLooping]);
+
+  // Apply pitch changes live, without interrupting playback. The <audio>
+  // element handles this natively; the reverse AudioBufferSourceNode needs its
+  // position-tracking baseline rebased to the new rate so it doesn't drift.
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.playbackRate = playbackRate;
+
+    if (reverseSourceRef.current) {
+      const ctx = getSharedAudioContext();
+      const elapsedBufferTime = (ctx.currentTime - reverseStartCtxTimeRef.current) * reverseRateRef.current;
+      reverseSourceRef.current.playbackRate.value = playbackRate;
+      reverseStartCtxTimeRef.current = ctx.currentTime - elapsedBufferTime / playbackRate;
+      reverseRateRef.current = playbackRate;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playbackRate]);
 
   // Fetch and decode audio once to build the bar waveform (and keep the
   // decoded buffer around so reverse playback can reuse it)
@@ -347,6 +375,30 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
       >
         <ReverseIcon className="h-4 w-4" />
       </button>
+
+      <div className="flex flex-shrink-0 items-center gap-1">
+        <button
+          onClick={() => setSemitones((s) => Math.max(-12, s - 1))}
+          title="Pitch down"
+          className="flex h-9 w-6 items-center justify-center border-2 border-cyan/40 bg-black font-mono text-chrome transition-all duration-200 ease-linear hover:border-cyan hover:text-cyan hover:shadow-glow-cyan"
+        >
+          &minus;
+        </button>
+        <span
+          onClick={() => setSemitones(0)}
+          title="Click to reset pitch"
+          className="w-12 flex-shrink-0 cursor-pointer text-center font-mono text-xs text-magenta"
+        >
+          {semitones > 0 ? `+${semitones}` : semitones}ST
+        </span>
+        <button
+          onClick={() => setSemitones((s) => Math.min(12, s + 1))}
+          title="Pitch up"
+          className="flex h-9 w-6 items-center justify-center border-2 border-cyan/40 bg-black font-mono text-chrome transition-all duration-200 ease-linear hover:border-cyan hover:text-cyan hover:shadow-glow-cyan"
+        >
+          +
+        </button>
+      </div>
 
       <div className="relative h-16 min-w-[140px] flex-1 cursor-pointer" onClick={handleSeek}>
         <canvas ref={canvasRef} className="block h-full w-full" width={500} height={64} />
