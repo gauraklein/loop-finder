@@ -6,6 +6,7 @@ interface WaveformPlayerProps {
   audioUrl: string;
   downloadUrl: string;
   downloadFilename: string;
+  label?: string;
 }
 
 const BAR_COUNT = 100;
@@ -36,7 +37,7 @@ const computePeaks = (channelData: Float32Array, barCount: number): number[] => 
   return peaks;
 };
 
-const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, downloadFilename }) => {
+const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, downloadFilename, label }) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const peaksRef = useRef<number[] | null>(null);
@@ -296,6 +297,12 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
 
   return (
     <div className="flex flex-wrap items-center gap-3 border-t border-border px-5 py-4">
+      {label && (
+        <span className="w-16 flex-shrink-0 font-mono text-xs uppercase tracking-widest text-magenta">
+          {label}
+        </span>
+      )}
+
       <button
         onClick={togglePlay}
         className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border-2 border-magenta bg-black text-magenta transition-all duration-200 ease-linear hover:scale-110 hover:bg-magenta hover:text-black hover:shadow-glow-magenta"

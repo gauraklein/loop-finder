@@ -24,6 +24,24 @@ interface LoopResultsDisplayProps {
 
 const statusMessageClasses = 'p-8 text-center font-mono text-cyan';
 
+const STATUS_MESSAGES: Record<string, string> = {
+  uploaded: 'Preparing audio... Please wait.',
+  processing_url: 'Downloading audio from URL... Please wait.',
+  downloading: 'Downloading audio... Please wait.',
+  analyzing: 'Analyzing audio... Please wait.',
+  separating_stems: 'Separating stems (drums / bass / vocals / other)... this can take a bit longer.',
+};
+
+const getStatusMessage = (status?: string): string =>
+  (status && STATUS_MESSAGES[status]) || 'Analyzing audio... Please wait.';
+
+const ProcessingState: React.FC<{ message: string }> = ({ message }) => (
+  <div className={`${statusMessageClasses} flex flex-col items-center gap-4`}>
+    <div className="h-10 w-10 animate-spin rounded-full border-4 border-cyan/30 border-t-magenta" />
+    <p>&gt; {message}</p>
+  </div>
+);
+
 const btnOutline =
   '-skew-x-12 transform border-2 border-magenta bg-transparent px-5 py-2.5 font-mono text-sm uppercase tracking-wider text-magenta transition-all duration-200 ease-linear hover:skew-x-0 hover:bg-magenta hover:text-white hover:shadow-glow-magenta-lg disabled:cursor-not-allowed disabled:opacity-50';
 
@@ -44,17 +62,16 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
         setLoading(true);
         const status = await getTaskStatus(taskId);
         setTaskStatus(status);
+        setError(null);
         setLoading(false);
 
-        // Schedule next check ONLY if still processing
-        if (status.status === 'analyzing' || status.status === 'processing_url' || status.status === 'downloading') {
-          // Clear any existing timeout
+        // Keep polling until the task reaches a terminal state - anything else
+        // (uploaded/downloading/analyzing/separating_stems/...) is still in progress.
+        if (status.status === 'completed' || status.status === 'failed') {
           if (timeoutId) clearTimeout(timeoutId);
-          // Schedule next check in 2 seconds
-          timeoutId = setTimeout(checkStatus, 2000);
         } else {
-          // Task completed/failed - clear any pending timeouts
           if (timeoutId) clearTimeout(timeoutId);
+          timeoutId = setTimeout(checkStatus, 2000);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to fetch task status');
@@ -74,19 +91,11 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
     };
   }, [taskId]);
 
-  if (loading) {
-    return <div className={statusMessageClasses}>&gt; Analyzing audio... Please wait.</div>;
-  }
-
   if (error) {
     return <div className={`${statusMessageClasses} text-magenta`}>&gt; Error: {error}</div>;
   }
 
-  if (!taskStatus) {
-    return <div className={statusMessageClasses}>&gt; No task data available.</div>;
-  }
-
-  if (taskStatus.status === 'failed') {
+  if (taskStatus?.status === 'failed') {
     return (
       <div className={`${statusMessageClasses} text-magenta`}>
         &gt; Analysis failed: {taskStatus.error}
@@ -94,12 +103,8 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
     );
   }
 
-  if (taskStatus.status !== 'completed' || !taskStatus.result || !taskStatus.result.loops) {
-    return (
-      <div className={statusMessageClasses}>
-        &gt; Waiting for analysis to complete... Current status: {taskStatus.status}
-      </div>
-    );
+  if (loading || !taskStatus || taskStatus.status !== 'completed' || !taskStatus.result?.loops) {
+    return <ProcessingState message={getStatusMessage(taskStatus?.status)} />;
   }
 
   const loops: LoopResult[] = taskStatus.result.loops;
@@ -184,27 +189,23 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
             />
 
             {loop.stems && Object.keys(loop.stems).length > 0 && (
-              <div className="border-t border-border px-5 py-4">
-                <strong className="mb-3 block font-mono text-xs uppercase tracking-widest text-chrome">
+              <div className="border-t border-border">
+                <strong className="block px-5 pt-4 font-mono text-xs uppercase tracking-widest text-chrome">
                   Stems
                 </strong>
-                <div className="flex flex-wrap gap-2">
-                  {Object.keys(loop.stems).map((stemName) => (
-                    <button
+                {Object.keys(loop.stems).map((stemName) => {
+                  const basename = loop.basename || loop.filename.replace('.wav', '');
+                  const stemUrl = `${process.env.REACT_APP_API_URL}/api/stem/${taskId}/${basename}/${stemName}`;
+                  return (
+                    <WaveformPlayer
                       key={stemName}
-                      onClick={() => {
-                        const stemUrl = `${process.env.REACT_APP_API_URL}/api/stem/${taskId}/${loop.basename || loop.filename.replace('.wav', '')}/${stemName}`;
-                        downloadFile(stemUrl, `${loop.basename || loop.filename.replace('.wav', '')}_${stemName}.wav`);
-                      }}
-                      title={`Download ${stemName} stem`}
-                      className="group flex h-9 w-9 rotate-45 items-center justify-center border-2 border-magenta font-mono text-xs font-bold text-magenta transition-all duration-200 ease-linear hover:rotate-90 hover:bg-magenta hover:text-white hover:shadow-glow-magenta"
-                    >
-                      <span className="-rotate-45 transform transition-all duration-200 ease-linear group-hover:-rotate-90">
-                        {stemName.charAt(0).toUpperCase()}
-                      </span>
-                    </button>
-                  ))}
-                </div>
+                      label={stemName}
+                      audioUrl={stemUrl}
+                      downloadUrl={stemUrl}
+                      downloadFilename={`${basename}_${stemName}.wav`}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>

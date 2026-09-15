@@ -161,15 +161,17 @@ async def process_audio_task(task_id: str):
         # Update progress
         task["progress"] = 20
 
-        # Run actual analysis
+        # Run actual analysis (CPU-bound - run off the event loop so the API
+        # stays responsive to status polling while this runs)
         print(f"Analyzing {task['file_path']}...")
-        analysis = load_and_analyze(task["file_path"])
+        analysis = await asyncio.to_thread(load_and_analyze, task["file_path"])
         task["progress"] = 40
         print(f"Detected BPM: {analysis.bpm:.2f}")
 
         # Find candidates
         print("Finding loop candidates...")
-        candidates_by_bars = find_candidates(
+        candidates_by_bars = await asyncio.to_thread(
+            find_candidates,
             analysis,
             bar_lengths=bar_lengths,
             top=task["top"],
@@ -180,7 +182,8 @@ async def process_audio_task(task_id: str):
 
         # Export loops
         print("Exporting loops...")
-        track_dir, rows = export_loops(
+        track_dir, rows = await asyncio.to_thread(
+            export_loops,
             analysis,
             candidates_by_bars,
             Path(task["out_dir"])
@@ -190,6 +193,7 @@ async def process_audio_task(task_id: str):
 
         # Separate stems if requested
         if task["stems"]:
+            task["status"] = "separating_stems"
             print("Separating stems...")
             # Convert rows to the format expected by separate_loops
             loop_rows = []
@@ -199,8 +203,9 @@ async def process_audio_task(task_id: str):
                     "basename": row.get("basename") or Path(row["file"]).stem
                 })
 
-            # Separate stems
-            separated_rows = separate_loops(
+            # Separate stems (CPU-bound Demucs inference - off the event loop too)
+            separated_rows = await asyncio.to_thread(
+                separate_loops,
                 loop_rows,
                 track_dir,
                 on_progress=lambda name: print(f"  stems: {name}")
@@ -264,9 +269,9 @@ async def process_url_task(task_id: str):
         task["status"] = "downloading"
         task["progress"] = 10
 
-        # Download audio
+        # Download audio (network/subprocess-bound - off the event loop too)
         print(f"Downloading from {task['url']}...")
-        audio_path = download_audio(task["url"], UPLOAD_DIR)
+        audio_path = await asyncio.to_thread(download_audio, task["url"], UPLOAD_DIR)
         task["file_path"] = str(audio_path)
         task["filename"] = audio_path.name
         task["progress"] = 40
