@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { downloadFile } from '../../utils/download';
-import { RepeatIcon, DownloadIcon, ReverseIcon } from '../icons';
+import { DownloadIcon, ReverseIcon } from '../icons';
 
 // Coordinates playback across every WaveformPlayer under a Provider so
 // starting one stops whichever other one is currently playing.
@@ -96,7 +96,6 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
   const reverseRafRef = useRef<number | null>(null);
 
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isLooping, setIsLooping] = useState(false);
   const [isReversed, setIsReversed] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -169,7 +168,7 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
   const tickReverseProgress = () => {
     const ctx = getSharedAudioContext();
     const elapsed = (ctx.currentTime - reverseStartCtxTimeRef.current) * reverseRateRef.current;
-    const wrapped = isLooping && duration ? elapsed % duration : elapsed;
+    const wrapped = duration ? elapsed % duration : elapsed;
     const clamped = Math.min(Math.max(wrapped, 0), duration);
     setCurrentTime(duration - clamped);
     reverseRafRef.current = requestAnimationFrame(tickReverseProgress);
@@ -185,16 +184,9 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
 
     const source = ctx.createBufferSource();
     source.buffer = buffer;
-    source.loop = isLooping;
+    source.loop = true;
     source.playbackRate.value = playbackRate;
     source.connect(ctx.destination);
-    source.onended = () => {
-      if (!isLooping) {
-        setIsPlaying(false);
-        setCurrentTime(duration);
-        stopReversePlayback();
-      }
-    };
 
     const clampedOffset = Math.min(Math.max(offsetSeconds, 0), duration || 0);
     source.start(0, clampedOffset);
@@ -212,10 +204,12 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
     setIsPlaying(false);
   };
 
-  // Set up the audio element (forward playback)
+  // Set up the audio element (forward playback) - loops are always on, so
+  // the native 'ended' event never fires and needs no handler.
   useEffect(() => {
     const audio = new Audio(audioUrl);
     audioRef.current = audio;
+    audio.loop = true;
     // Browsers preserve pitch across playbackRate changes by default - we want
     // the opposite (vinyl-style: rate change shifts pitch too), so disable it.
     (audio as any).preservesPitch = false;
@@ -224,30 +218,19 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
 
     const onLoadedMetadata = () => setDuration(audio.duration);
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
-    const onEnded = () => {
-      setIsPlaying(false);
-      setCurrentTime(0);
-    };
     const onError = () => setError('Failed to load audio');
 
     audio.addEventListener('loadedmetadata', onLoadedMetadata);
     audio.addEventListener('timeupdate', onTimeUpdate);
-    audio.addEventListener('ended', onEnded);
     audio.addEventListener('error', onError);
 
     return () => {
       audio.pause();
       audio.removeEventListener('loadedmetadata', onLoadedMetadata);
       audio.removeEventListener('timeupdate', onTimeUpdate);
-      audio.removeEventListener('ended', onEnded);
       audio.removeEventListener('error', onError);
     };
   }, [audioUrl]);
-
-  useEffect(() => {
-    if (audioRef.current) audioRef.current.loop = isLooping;
-    if (reverseSourceRef.current) reverseSourceRef.current.loop = isLooping;
-  }, [isLooping]);
 
   // Apply pitch changes live, without interrupting playback. The <audio>
   // element handles this natively; the reverse AudioBufferSourceNode needs its
@@ -339,16 +322,33 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
   };
 
   const handleToggleReverse = () => {
-    if (isPlaying) {
-      if (isReversed) stopReversePlayback();
-      else audioRef.current?.pause();
-      setIsPlaying(false);
+    const wasPlaying = isPlaying;
+    const position = currentTime;
+    const next = !isReversed;
+
+    if (isReversed) {
+      stopReversePlayback();
+    } else {
+      audioRef.current?.pause();
     }
-    setIsReversed((prev) => {
-      const next = !prev;
+    setIsReversed(next);
+
+    if (!wasPlaying) {
       setCurrentTime(next ? duration : 0);
-      return next;
-    });
+      return;
+    }
+
+    // Already playing and already registered as the active player with the
+    // PlaybackProvider - just carry on in the new direction from the same spot.
+    if (next) {
+      playReverseFrom(duration - position);
+    } else {
+      const audio = audioRef.current;
+      if (audio) {
+        audio.currentTime = position;
+        audio.play().catch(() => setError('Playback prevented. Click anywhere to enable audio.'));
+      }
+    }
   };
 
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -423,14 +423,6 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
             +
           </IconButton>
         </div>
-
-        <IconButton
-          onClick={() => setIsLooping((looping) => !looping)}
-          tooltip={isLooping ? 'Disable loop' : 'Enable loop'}
-          className={`${iconButtonClasses} ${isLooping ? 'border-cyan bg-cyan text-black shadow-glow-cyan' : ''}`}
-        >
-          <RepeatIcon className="h-4 w-4" />
-        </IconButton>
 
         <IconButton
           onClick={() => downloadFile(downloadUrl, downloadFilename)}
