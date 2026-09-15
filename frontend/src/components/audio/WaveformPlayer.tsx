@@ -23,6 +23,24 @@ interface WaveformPlayerProps {
   label?: string;
 }
 
+// A button with a themed tooltip that appears instantly on hover, instead of
+// relying on the browser's slow, plain native `title` tooltip.
+const IconButton: React.FC<{
+  onClick: () => void;
+  tooltip: string;
+  className: string;
+  children: React.ReactNode;
+}> = ({ onClick, tooltip, className, children }) => (
+  <div className="group relative inline-flex flex-shrink-0">
+    <button onClick={onClick} title={tooltip} className={className}>
+      {children}
+    </button>
+    <span className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 -translate-x-1/2 whitespace-nowrap border border-cyan bg-black px-2 py-1 font-mono text-[0.65rem] uppercase tracking-wider text-cyan opacity-0 shadow-glow-cyan transition-opacity duration-150 ease-linear group-hover:opacity-100">
+      {tooltip}
+    </span>
+  </div>
+);
+
 // Browsers cap how many real AudioContexts can be open at once (a results
 // page can easily render 100+ WaveformPlayers between loops and stems), so
 // every instance shares this one context instead of creating its own.
@@ -353,77 +371,77 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
     'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border-2 border-cyan/40 bg-black text-sm text-chrome transition-all duration-200 ease-linear hover:scale-110 hover:border-cyan hover:text-cyan hover:shadow-glow-cyan';
 
   return (
-    <div className="flex flex-wrap items-center gap-3 border-t border-border px-5 py-4">
+    <div className="border-t border-border px-5 py-4">
       {label && (
-        <span className="w-16 flex-shrink-0 font-mono text-xs uppercase tracking-widest text-magenta">
-          {label}
-        </span>
+        <div className="mb-2 font-mono text-xs uppercase tracking-widest text-magenta">{label}</div>
       )}
 
-      <button
-        onClick={togglePlay}
-        className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border-2 border-magenta bg-black text-magenta transition-all duration-200 ease-linear hover:scale-110 hover:bg-magenta hover:text-black hover:shadow-glow-magenta"
-        title={isPlaying ? 'Pause' : 'Play'}
-      >
-        {isPlaying ? '⏸' : '▶'}
-      </button>
-
-      <button
-        onClick={handleToggleReverse}
-        className={`${iconButtonClasses} ${isReversed ? 'border-sunset bg-sunset text-black shadow-[0_0_15px_#FF9900]' : ''}`}
-        title={isReversed ? 'Switch to forward playback' : 'Play in reverse'}
-      >
-        <ReverseIcon className="h-4 w-4" />
-      </button>
-
-      <div className="flex flex-shrink-0 items-center gap-1">
-        <button
-          onClick={() => setSemitones((s) => Math.max(-12, s - 1))}
-          title="Pitch down"
-          className="flex h-9 w-6 items-center justify-center border-2 border-cyan/40 bg-black font-mono text-chrome transition-all duration-200 ease-linear hover:border-cyan hover:text-cyan hover:shadow-glow-cyan"
-        >
-          &minus;
-        </button>
-        <span
-          onClick={() => setSemitones(0)}
-          title="Click to reset pitch"
-          className="w-12 flex-shrink-0 cursor-pointer text-center font-mono text-xs text-magenta"
-        >
-          {semitones > 0 ? `+${semitones}` : semitones}ST
-        </span>
-        <button
-          onClick={() => setSemitones((s) => Math.min(12, s + 1))}
-          title="Pitch up"
-          className="flex h-9 w-6 items-center justify-center border-2 border-cyan/40 bg-black font-mono text-chrome transition-all duration-200 ease-linear hover:border-cyan hover:text-cyan hover:shadow-glow-cyan"
-        >
-          +
-        </button>
-      </div>
-
-      <div className="relative h-16 min-w-[140px] flex-1 cursor-pointer" onClick={handleSeek}>
-        <canvas ref={canvasRef} className="block h-full w-full" width={500} height={64} />
-        <span className="pointer-events-none absolute bottom-0.5 right-1 bg-black/70 px-1 font-mono text-[0.65rem] text-cyan">
+      <div className="relative h-28 w-full cursor-pointer" onClick={handleSeek}>
+        <canvas ref={canvasRef} className="block h-full w-full" width={800} height={112} />
+        <span className="pointer-events-none absolute bottom-1 right-2 bg-black/70 px-1.5 py-0.5 font-mono text-xs text-cyan">
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
       </div>
 
-      <button
-        onClick={() => setIsLooping((looping) => !looping)}
-        className={`${iconButtonClasses} ${isLooping ? 'border-cyan bg-cyan text-black shadow-glow-cyan' : ''}`}
-        title={isLooping ? 'Disable loop' : 'Enable loop'}
-      >
-        <RepeatIcon className="h-4 w-4" />
-      </button>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <IconButton
+          onClick={togglePlay}
+          tooltip={isPlaying ? 'Pause' : 'Play'}
+          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border-2 border-magenta bg-black text-magenta transition-all duration-200 ease-linear hover:scale-110 hover:bg-magenta hover:text-black hover:shadow-glow-magenta"
+        >
+          {isPlaying ? '⏸' : '▶'}
+        </IconButton>
 
-      <button
-        onClick={() => downloadFile(downloadUrl, downloadFilename)}
-        className={iconButtonClasses}
-        title="Download loop file"
-      >
-        <DownloadIcon className="h-4 w-4" />
-      </button>
+        <IconButton
+          onClick={handleToggleReverse}
+          tooltip={isReversed ? 'Switch to forward playback' : 'Play in reverse'}
+          className={`${iconButtonClasses} ${isReversed ? 'border-sunset bg-sunset text-black shadow-[0_0_15px_#FF9900]' : ''}`}
+        >
+          <ReverseIcon className="h-4 w-4" />
+        </IconButton>
 
-      {error && <span className="basis-full font-mono text-xs text-magenta">{error}</span>}
+        <div className="flex flex-shrink-0 items-center gap-1">
+          <IconButton
+            onClick={() => setSemitones((s) => Math.max(-12, s - 1))}
+            tooltip="Pitch down"
+            className="flex h-9 w-6 items-center justify-center border-2 border-cyan/40 bg-black font-mono text-chrome transition-all duration-200 ease-linear hover:border-cyan hover:text-cyan hover:shadow-glow-cyan"
+          >
+            &minus;
+          </IconButton>
+          <span
+            onClick={() => setSemitones(0)}
+            title="Click to reset pitch"
+            className="w-12 flex-shrink-0 cursor-pointer text-center font-mono text-xs text-magenta"
+          >
+            {semitones > 0 ? `+${semitones}` : semitones}ST
+          </span>
+          <IconButton
+            onClick={() => setSemitones((s) => Math.min(12, s + 1))}
+            tooltip="Pitch up"
+            className="flex h-9 w-6 items-center justify-center border-2 border-cyan/40 bg-black font-mono text-chrome transition-all duration-200 ease-linear hover:border-cyan hover:text-cyan hover:shadow-glow-cyan"
+          >
+            +
+          </IconButton>
+        </div>
+
+        <IconButton
+          onClick={() => setIsLooping((looping) => !looping)}
+          tooltip={isLooping ? 'Disable loop' : 'Enable loop'}
+          className={`${iconButtonClasses} ${isLooping ? 'border-cyan bg-cyan text-black shadow-glow-cyan' : ''}`}
+        >
+          <RepeatIcon className="h-4 w-4" />
+        </IconButton>
+
+        <IconButton
+          onClick={() => downloadFile(downloadUrl, downloadFilename)}
+          tooltip="Download loop file"
+          className={iconButtonClasses}
+        >
+          <DownloadIcon className="h-4 w-4" />
+        </IconButton>
+
+        {error && <span className="basis-full font-mono text-xs text-magenta">{error}</span>}
+      </div>
     </div>
   );
 };
