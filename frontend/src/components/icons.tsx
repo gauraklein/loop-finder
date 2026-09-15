@@ -11,6 +11,13 @@ export const RepeatIcon: React.FC<IconProps> = ({ className }) => (
   </svg>
 );
 
+export const ReverseIcon: React.FC<IconProps> = ({ className }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <path d="M11 5l-7 7 7 7" />
+    <path d="M20 5l-7 7 7 7" />
+  </svg>
+);
+
 export const DownloadIcon: React.FC<IconProps> = ({ className }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className={className}>
     <path d="M12 3v12" />

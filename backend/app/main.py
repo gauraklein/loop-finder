@@ -202,7 +202,7 @@ async def process_audio_task(task_id: str):
             # Separate stems
             separated_rows = separate_loops(
                 loop_rows,
-                Path(task["out_dir"]),
+                track_dir,
                 on_progress=lambda name: print(f"  stems: {name}")
             )
             # Update rows with stem information

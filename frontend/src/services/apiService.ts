@@ -46,12 +46,14 @@ export interface TaskStatus {
 export const uploadFile = async (
   file: File,
   bars: string = "4,2",
-  top: number = 5
+  top: number = 5,
+  stems: boolean = false
 ): Promise<UploadFileResponse> => {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('bars', bars);
   formData.append('top', top.toString());
+  formData.append('stems', stems.toString());
 
   const response = await fetch(`${API_BASE_URL}/upload`, {
     method: 'POST',
@@ -68,12 +70,14 @@ export const uploadFile = async (
 export const analyzeUrl = async (
   url: string,
   bars: string = "4,2",
-  top: number = 5
+  top: number = 5,
+  stems: boolean = false
 ): Promise<AnalyzeUrlResponse> => {
   const formData = new FormData();
   formData.append('url', url);
   formData.append('bars', bars);
   formData.append('top', top.toString());
+  formData.append('stems', stems.toString());
 
   const response = await fetch(`${API_BASE_URL}/analyze-url`, {
     method: 'POST',

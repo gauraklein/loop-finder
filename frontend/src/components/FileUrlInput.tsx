@@ -13,6 +13,7 @@ const FileUrlInput: React.FC<FileUrlInputProps> = ({ onAnalysisStart }) => {
   const [url, setUrl] = useState<string>('');
   const [bars, setBars] = useState<string>('4,2');
   const [top, setTop] = useState<number>(5);
+  const [separateStems, setSeparateStems] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -35,10 +36,10 @@ const FileUrlInput: React.FC<FileUrlInputProps> = ({ onAnalysisStart }) => {
       let taskId: string;
 
       if (file) {
-        const response = await uploadFile(file, bars, top);
+        const response = await uploadFile(file, bars, top, separateStems);
         taskId = response.task_id;
       } else if (url.trim()) {
-        const response = await analyzeUrl(url.trim(), bars, top);
+        const response = await analyzeUrl(url.trim(), bars, top, separateStems);
         taskId = response.task_id;
       } else {
         throw new Error('Please provide either a file or a URL');
@@ -138,6 +139,23 @@ const FileUrlInput: React.FC<FileUrlInputProps> = ({ onAnalysisStart }) => {
               className={inputClasses}
             />
           </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <input
+            type="checkbox"
+            id="stems-input"
+            checked={separateStems}
+            onChange={(e) => setSeparateStems(e.target.checked)}
+            disabled={isProcessing}
+            className="h-5 w-5 cursor-pointer border-2 border-magenta bg-black accent-magenta disabled:opacity-50"
+          />
+          <label
+            htmlFor="stems-input"
+            className="cursor-pointer font-mono text-sm uppercase tracking-wider text-chrome"
+          >
+            &gt; Separate stems (drums / bass / vocals / other)
+          </label>
         </div>
 
         <button

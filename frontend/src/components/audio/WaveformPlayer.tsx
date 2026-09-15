@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { downloadFile } from '../../utils/download';
-import { RepeatIcon, DownloadIcon } from '../icons';
+import { RepeatIcon, DownloadIcon, ReverseIcon } from '../icons';
 
 interface WaveformPlayerProps {
   audioUrl: string;
@@ -41,8 +41,18 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const peaksRef = useRef<number[] | null>(null);
 
+  // Reverse playback needs the decoded PCM data - the <audio> element has no
+  // way to play backwards, so we drive it through Web Audio instead.
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const decodedBufferRef = useRef<AudioBuffer | null>(null);
+  const reversedBufferRef = useRef<AudioBuffer | null>(null);
+  const reverseSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const reverseStartCtxTimeRef = useRef(0);
+  const reverseRafRef = useRef<number | null>(null);
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLooping, setIsLooping] = useState(false);
+  const [isReversed, setIsReversed] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -65,12 +75,93 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
     peaks.forEach((peak, i) => {
       const barHeight = Math.max(2, peak * height);
       const x = i * barWidth;
-      ctx.fillStyle = x < progressX ? PLAYED_COLOR : UNPLAYED_COLOR;
+      const isPlayed = isReversed ? x >= progressX : x < progressX;
+      ctx.fillStyle = isPlayed ? PLAYED_COLOR : UNPLAYED_COLOR;
       ctx.fillRect(x, mid - barHeight / 2, Math.max(1, barWidth - 1), barHeight);
     });
   };
 
-  // Set up the audio element
+  const getAudioCtx = () => {
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    return audioCtxRef.current;
+  };
+
+  const getReversedBuffer = (): AudioBuffer | null => {
+    const decoded = decodedBufferRef.current;
+    if (!decoded) return null;
+    if (reversedBufferRef.current) return reversedBufferRef.current;
+
+    const ctx = getAudioCtx();
+    const reversed = ctx.createBuffer(decoded.numberOfChannels, decoded.length, decoded.sampleRate);
+    for (let channel = 0; channel < decoded.numberOfChannels; channel++) {
+      const source = decoded.getChannelData(channel);
+      const reversedData = new Float32Array(source.length);
+      for (let i = 0; i < source.length; i++) {
+        reversedData[i] = source[source.length - 1 - i];
+      }
+      reversed.copyToChannel(reversedData, channel);
+    }
+    reversedBufferRef.current = reversed;
+    return reversed;
+  };
+
+  const stopReversePlayback = () => {
+    if (reverseSourceRef.current) {
+      reverseSourceRef.current.onended = null;
+      try {
+        reverseSourceRef.current.stop();
+      } catch {
+        // already stopped
+      }
+      reverseSourceRef.current.disconnect();
+      reverseSourceRef.current = null;
+    }
+    if (reverseRafRef.current !== null) {
+      cancelAnimationFrame(reverseRafRef.current);
+      reverseRafRef.current = null;
+    }
+  };
+
+  const tickReverseProgress = () => {
+    const ctx = audioCtxRef.current;
+    if (!ctx) return;
+    const elapsed = ctx.currentTime - reverseStartCtxTimeRef.current;
+    const wrapped = isLooping && duration ? elapsed % duration : elapsed;
+    const clamped = Math.min(Math.max(wrapped, 0), duration);
+    setCurrentTime(duration - clamped);
+    reverseRafRef.current = requestAnimationFrame(tickReverseProgress);
+  };
+
+  const playReverseFrom = (offsetSeconds: number) => {
+    const buffer = getReversedBuffer();
+    const ctx = audioCtxRef.current;
+    if (!buffer || !ctx) return;
+
+    stopReversePlayback();
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = isLooping;
+    source.connect(ctx.destination);
+    source.onended = () => {
+      if (!isLooping) {
+        setIsPlaying(false);
+        setCurrentTime(duration);
+        stopReversePlayback();
+      }
+    };
+
+    const clampedOffset = Math.min(Math.max(offsetSeconds, 0), duration || 0);
+    source.start(0, clampedOffset);
+    reverseSourceRef.current = source;
+    reverseStartCtxTimeRef.current = ctx.currentTime - clampedOffset;
+    reverseRafRef.current = requestAnimationFrame(tickReverseProgress);
+  };
+
+  // Set up the audio element (forward playback)
   useEffect(() => {
     const audio = new Audio(audioUrl);
     audioRef.current = audio;
@@ -99,28 +190,29 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
 
   useEffect(() => {
     if (audioRef.current) audioRef.current.loop = isLooping;
+    if (reverseSourceRef.current) reverseSourceRef.current.loop = isLooping;
   }, [isLooping]);
 
-  // Fetch and decode audio once to build the bar waveform
+  // Fetch and decode audio once to build the bar waveform (and keep the
+  // decoded buffer around so reverse playback can reuse it)
   useEffect(() => {
     const controller = new AbortController();
 
     (async () => {
-      let audioCtx: AudioContext | null = null;
       try {
         const response = await fetch(audioUrl, { signal: controller.signal });
         if (!response.ok) throw new Error('Failed to fetch audio');
         const arrayBuffer = await response.arrayBuffer();
-        audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const decoded = await audioCtx.decodeAudioData(arrayBuffer);
+        const ctx = getAudioCtx();
+        const decoded = await ctx.decodeAudioData(arrayBuffer);
+        decodedBufferRef.current = decoded;
+        reversedBufferRef.current = null;
         peaksRef.current = computePeaks(decoded.getChannelData(0), BAR_COUNT);
         drawWaveform();
       } catch (err) {
         if (err instanceof Error && err.name !== 'AbortError') {
           console.error('Error building waveform:', err);
         }
-      } finally {
-        audioCtx?.close();
       }
     })();
 
@@ -128,13 +220,33 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [audioUrl]);
 
+  // Tear down the persistent AudioContext and any in-flight reverse playback on unmount
+  useEffect(() => {
+    return () => {
+      stopReversePlayback();
+      audioCtxRef.current?.close();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Redraw the progress overlay as playback advances
   useEffect(() => {
     drawWaveform();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTime, duration]);
+  }, [currentTime, duration, isReversed]);
 
   const togglePlay = () => {
+    if (isReversed) {
+      if (isPlaying) {
+        stopReversePlayback();
+        setIsPlaying(false);
+      } else if (getReversedBuffer()) {
+        playReverseFrom(duration - currentTime);
+        setIsPlaying(true);
+      }
+      return;
+    }
+
     const audio = audioRef.current;
     if (!audio) return;
 
@@ -142,6 +254,7 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
       audio.pause();
       setIsPlaying(false);
     } else {
+      audio.currentTime = currentTime;
       audio
         .play()
         .then(() => setIsPlaying(true))
@@ -149,17 +262,33 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
     }
   };
 
+  const handleToggleReverse = () => {
+    if (isPlaying) {
+      if (isReversed) stopReversePlayback();
+      else audioRef.current?.pause();
+      setIsPlaying(false);
+    }
+    setIsReversed((prev) => {
+      const next = !prev;
+      setCurrentTime(next ? duration : 0);
+      return next;
+    });
+  };
+
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-    const audio = audioRef.current;
     const canvas = canvasRef.current;
-    if (!audio || !canvas || !duration) return;
+    if (!canvas || !duration) return;
 
     const rect = canvas.getBoundingClientRect();
     const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const time = percent * duration;
-
-    audio.currentTime = time;
     setCurrentTime(time);
+
+    if (isReversed) {
+      if (isPlaying) playReverseFrom(duration - time);
+    } else if (audioRef.current) {
+      audioRef.current.currentTime = time;
+    }
   };
 
   const iconButtonClasses =
@@ -173,6 +302,14 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
         title={isPlaying ? 'Pause' : 'Play'}
       >
         {isPlaying ? '⏸' : '▶'}
+      </button>
+
+      <button
+        onClick={handleToggleReverse}
+        className={`${iconButtonClasses} ${isReversed ? 'border-sunset bg-sunset text-black shadow-[0_0_15px_#FF9900]' : ''}`}
+        title={isReversed ? 'Switch to forward playback' : 'Play in reverse'}
+      >
+        <ReverseIcon className="h-4 w-4" />
       </button>
 
       <div className="relative h-16 min-w-[140px] flex-1 cursor-pointer" onClick={handleSeek}>

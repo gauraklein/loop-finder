@@ -183,7 +183,7 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
               downloadFilename={loop.filename}
             />
 
-            {loop.stems && (
+            {loop.stems && Object.keys(loop.stems).length > 0 && (
               <div className="border-t border-border px-5 py-4">
                 <strong className="mb-3 block font-mono text-xs uppercase tracking-widest text-chrome">
                   Stems
