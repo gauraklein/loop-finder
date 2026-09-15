@@ -21,6 +21,14 @@ interface LoopResultsDisplayProps {
   taskId: string;
 }
 
+const statusMessageClasses = 'p-8 text-center font-mono text-cyan';
+
+const btnOutline =
+  '-skew-x-12 transform border-2 border-magenta bg-transparent px-5 py-2.5 font-mono text-sm uppercase tracking-wider text-magenta transition-all duration-200 ease-linear hover:skew-x-0 hover:bg-magenta hover:text-white hover:shadow-glow-magenta-lg disabled:cursor-not-allowed disabled:opacity-50';
+
+const btnSecondary =
+  '-skew-x-12 transform border-2 border-cyan bg-cyan px-5 py-2.5 font-mono text-sm uppercase tracking-wider text-black transition-all duration-200 ease-linear hover:skew-x-0 hover:shadow-glow-cyan-lg disabled:cursor-not-allowed disabled:opacity-50';
+
 const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
   const [taskStatus, setTaskStatus] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -66,29 +74,29 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
   }, [taskId]);
 
   if (loading) {
-    return <div className="loop-results">Analyzing audio... Please wait.</div>;
+    return <div className={statusMessageClasses}>&gt; Analyzing audio... Please wait.</div>;
   }
 
   if (error) {
-    return <div className="loop-results error">Error: {error}</div>;
+    return <div className={`${statusMessageClasses} text-magenta`}>&gt; Error: {error}</div>;
   }
 
   if (!taskStatus) {
-    return <div className="loop-results">No task data available.</div>;
+    return <div className={statusMessageClasses}>&gt; No task data available.</div>;
   }
 
   if (taskStatus.status === 'failed') {
     return (
-      <div className="loop-results error">
-        Analysis failed: {taskStatus.error}
+      <div className={`${statusMessageClasses} text-magenta`}>
+        &gt; Analysis failed: {taskStatus.error}
       </div>
     );
   }
 
   if (taskStatus.status !== 'completed' || !taskStatus.result || !taskStatus.result.loops) {
     return (
-      <div className="loop-results">
-        Waiting for analysis to complete... Current status: {taskStatus.status}
+      <div className={statusMessageClasses}>
+        &gt; Waiting for analysis to complete... Current status: {taskStatus.status}
       </div>
     );
   }
@@ -100,16 +108,15 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
     : null;
 
   return (
-    <div className="loop-results">
-      <div className="results-header">
-        <h2>Detected Loops ({loops.length} found)</h2>
-        <div className="export-buttons">
+    <div>
+      <div className="flex flex-col gap-5 border-b border-cyan bg-cyan/10 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <h2 className="font-heading text-xl font-bold uppercase tracking-wider text-cyan drop-shadow-title">
+          Detected Loops ({loops.length} found)
+        </h2>
+        <div className="flex flex-wrap gap-3">
           {reportUrl && (
-            <button
-              onClick={() => downloadFile(reportUrl, `report-${taskId}.json`)}
-              className="btn-secondary"
-            >
-              📄 Download Report
+            <button onClick={() => downloadFile(reportUrl, `report-${taskId}.json`)} className={btnOutline}>
+              <span className="inline-block skew-x-12 transform">Download Report</span>
             </button>
           )}
           <button
@@ -121,9 +128,11 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
               setIsGeneratingZip(false);
             }}
             disabled={isGeneratingZip}
-            className={isGeneratingZip ? 'btn-disabled' : 'btn-primary'}
+            className={btnSecondary}
           >
-            {isGeneratingZip ? 'Generating...' : '📦 Download All Loops'}
+            <span className="inline-block skew-x-12 transform">
+              {isGeneratingZip ? 'Generating...' : 'Download All Loops'}
+            </span>
           </button>
           {hasStems && (
             <button
@@ -133,26 +142,33 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
                 setIsGeneratingZip(false);
               }}
               disabled={isGeneratingZip}
-              className="btn-secondary"
+              className={btnOutline}
             >
-              📦 Download All Stems
+              <span className="inline-block skew-x-12 transform">Download All Stems</span>
             </button>
           )}
         </div>
       </div>
 
-      <div className="loops-grid">
+      <div className="grid grid-cols-1 gap-7 p-6 md:grid-cols-2 sm:p-8">
         {loops.map((loop) => (
-          <div key={loop.id} className="loop-card">
-            <div className="loop-header">
-              <h3>Loop #{loop.rank}</h3>
-              <span className="loop-score">Score: {(loop.score * 100).toFixed(1)}%</span>
+          <div
+            key={loop.id}
+            className="border border-magenta/30 border-t-2 border-t-cyan bg-panel backdrop-blur-md transition-transform duration-200 ease-linear hover:-translate-y-2 hover:shadow-glow-cyan-lg"
+          >
+            <div className="flex items-center justify-between border-b border-border px-5 py-4">
+              <h3 className="font-heading text-lg font-bold uppercase text-cyan drop-shadow-title">
+                Loop #{loop.rank}
+              </h3>
+              <span className="border border-sunset px-3 py-1 font-mono text-xs text-sunset">
+                {(loop.score * 100).toFixed(1)}%
+              </span>
             </div>
 
-            <div className="loop-details">
-              <p><strong>Bars:</strong> {loop.bars}</p>
-              <p><strong>Duration:</strong> {loop.duration.toFixed(2)} seconds</p>
-              <p><strong>Time:</strong> {loop.start_time.toFixed(2)}s → {loop.end_time.toFixed(2)}s</p>
+            <div className="space-y-1 px-5 py-4 font-mono text-sm text-chrome/70">
+              <p><span className="text-chrome">Bars:</span> {loop.bars}</p>
+              <p><span className="text-chrome">Duration:</span> {loop.duration.toFixed(2)}s</p>
+              <p><span className="text-chrome">Time:</span> {loop.start_time.toFixed(2)}s &rarr; {loop.end_time.toFixed(2)}s</p>
             </div>
 
             <WaveformPlayer
@@ -162,24 +178,26 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
             />
 
             {loop.stems && (
-              <div className="loop-actions">
-                <div className="stem-actions">
-                  <strong>Stems:</strong>
-                  <div className="stem-buttons">
-                    {Object.keys(loop.stems).map((stemName) => (
-                      <button
-                        key={stemName}
-                        onClick={() => {
-                          const stemUrl = `${process.env.REACT_APP_API_URL}/api/stem/${taskId}/${loop.basename || loop.filename.replace('.wav', '')}/${stemName}`;
-                          downloadFile(stemUrl, `${loop.basename || loop.filename.replace('.wav', '')}_${stemName}.wav`);
-                        }}
-                        className="stem-button"
-                        title={`Download ${stemName} stem`}
-                      >
+              <div className="border-t border-border px-5 py-4">
+                <strong className="mb-3 block font-mono text-xs uppercase tracking-widest text-chrome">
+                  Stems
+                </strong>
+                <div className="flex flex-wrap gap-2">
+                  {Object.keys(loop.stems).map((stemName) => (
+                    <button
+                      key={stemName}
+                      onClick={() => {
+                        const stemUrl = `${process.env.REACT_APP_API_URL}/api/stem/${taskId}/${loop.basename || loop.filename.replace('.wav', '')}/${stemName}`;
+                        downloadFile(stemUrl, `${loop.basename || loop.filename.replace('.wav', '')}_${stemName}.wav`);
+                      }}
+                      title={`Download ${stemName} stem`}
+                      className="group flex h-9 w-9 rotate-45 items-center justify-center border-2 border-magenta font-mono text-xs font-bold text-magenta transition-all duration-200 ease-linear hover:rotate-90 hover:bg-magenta hover:text-white hover:shadow-glow-magenta"
+                    >
+                      <span className="-rotate-45 transform transition-all duration-200 ease-linear group-hover:-rotate-90">
                         {stemName.charAt(0).toUpperCase()}
-                      </button>
-                    ))}
-                  </div>
+                      </span>
+                    </button>
+                  ))}
                 </div>
               </div>
             )}

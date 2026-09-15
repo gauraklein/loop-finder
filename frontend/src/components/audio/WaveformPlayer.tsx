@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import './WaveformPlayer.css';
 import { downloadFile } from '../../utils/download';
 
 interface WaveformPlayerProps {
@@ -9,8 +8,8 @@ interface WaveformPlayerProps {
 }
 
 const BAR_COUNT = 100;
-const PLAYED_COLOR = '#6366f1';
-const UNPLAYED_COLOR = '#c7c9f5';
+const PLAYED_COLOR = '#FF00FF';
+const UNPLAYED_COLOR = '#2D1B4E';
 
 const formatTime = (seconds: number): string => {
   if (!isFinite(seconds) || seconds < 0) return '0:00';
@@ -162,26 +161,29 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
     setCurrentTime(time);
   };
 
+  const iconButtonClasses =
+    'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border-2 border-cyan/40 bg-black text-sm text-chrome transition-all duration-200 ease-linear hover:scale-110 hover:border-cyan hover:text-cyan hover:shadow-glow-cyan';
+
   return (
-    <div className="waveform-player">
+    <div className="flex flex-wrap items-center gap-3 border-t border-border px-5 py-4">
       <button
         onClick={togglePlay}
-        className="waveform-play-button"
+        className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border-2 border-magenta bg-black text-magenta transition-all duration-200 ease-linear hover:scale-110 hover:bg-magenta hover:text-black hover:shadow-glow-magenta"
         title={isPlaying ? 'Pause' : 'Play'}
       >
         {isPlaying ? '⏸' : '▶'}
       </button>
 
-      <div className="waveform-scrubber" onClick={handleSeek}>
-        <canvas ref={canvasRef} className="waveform-bars-canvas" width={500} height={64} />
-        <span className="waveform-time">
+      <div className="relative h-16 min-w-[140px] flex-1 cursor-pointer" onClick={handleSeek}>
+        <canvas ref={canvasRef} className="block h-full w-full" width={500} height={64} />
+        <span className="pointer-events-none absolute bottom-0.5 right-1 bg-black/70 px-1 font-mono text-[0.65rem] text-cyan">
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
       </div>
 
       <button
         onClick={() => setIsLooping((looping) => !looping)}
-        className={`waveform-icon-button${isLooping ? ' is-active' : ''}`}
+        className={`${iconButtonClasses} ${isLooping ? 'border-cyan bg-cyan text-black shadow-glow-cyan' : ''}`}
         title={isLooping ? 'Disable loop' : 'Enable loop'}
       >
         🔁
@@ -189,13 +191,13 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
 
       <button
         onClick={() => downloadFile(downloadUrl, downloadFilename)}
-        className="waveform-icon-button"
+        className={iconButtonClasses}
         title="Download loop file"
       >
         💾
       </button>
 
-      {error && <span className="waveform-error">{error}</span>}
+      {error && <span className="basis-full font-mono text-xs text-magenta">{error}</span>}
     </div>
   );
 };
