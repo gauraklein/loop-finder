@@ -10,6 +10,7 @@ import numpy as np
 
 
 ANALYSIS_SR = 22050
+EXPORT_SR = 48000
 
 
 @dataclass
@@ -36,7 +37,7 @@ def load_and_analyze(
     """Load audio, detect beats, and compute features for scoring."""
     path = Path(path)
 
-    y_export, sr_export = librosa.load(path, sr=None, mono=True)
+    y_export, sr_export = librosa.load(path, sr=EXPORT_SR, mono=True)
     y_analysis, sr_analysis = librosa.load(path, sr=ANALYSIS_SR, mono=True)
 
     tempo, beat_frames = librosa.beat.beat_track(

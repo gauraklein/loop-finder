@@ -20,6 +20,23 @@ pip install -e ".[stems]"
 
 Requires Python 3.11+.
 
+## Web UI
+
+Needs Python 3.11+, Node, and `ffmpeg` (for YouTube). One command:
+
+```bash
+./start.sh
+```
+
+First run calls `./setup.sh` (venv, package with stems, frontend build). After that it rebuilds the frontend only if its source changed, then serves the UI and API at http://127.0.0.1:8000 and opens your browser. Re-run `./setup.sh` after changing dependencies.
+
+For frontend development with hot reload, run both in separate terminals:
+
+```bash
+uvicorn loop_finder.server:app --reload --port 8000
+cd frontend && npm start   # http://localhost:3000, talks to :8000 via .env.development
+```
+
 ## Usage
 
 ```bash

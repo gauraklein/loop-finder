@@ -2,7 +2,8 @@
  * API service for communicating with the loop-finder backend
  */
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+// Empty in production builds: the UI is served by the API on the same origin
+export const API_BASE_URL = process.env.REACT_APP_API_URL || '';
 
 export interface UploadFileResponse {
   task_id: string;

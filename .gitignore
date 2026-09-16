@@ -9,5 +9,5 @@ loops/
 loops_bpm/
 *.wav
 .DS_Store
-backend/results/*
-backend/uploads/*
+results/
+uploads/

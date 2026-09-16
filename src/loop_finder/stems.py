@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+import librosa
 import numpy as np
 import soundfile as sf
 
@@ -51,12 +52,16 @@ class StemSeparator:
         _origin, stems = self._separator.separate_audio_file(loop_path)
         written: dict[str, Path] = {}
 
-        # Demucs tensors are (channels, samples); soundfile wants (samples,) or (samples, ch)
-        sr = int(self._separator.samplerate)
+        # Demucs outputs at its model rate (44.1 kHz); write stems at the loop's rate
+        model_sr = int(self._separator.samplerate)
+        sr = sf.info(loop_path).samplerate
         for name in STEM_NAMES:
             if name not in stems:
                 continue
             audio = stems[name].detach().cpu().numpy()
+            if sr != model_sr:
+                audio = librosa.resample(audio, orig_sr=model_sr, target_sr=sr)
+            # Demucs tensors are (channels, samples); soundfile wants (samples,) or (samples, ch)
             if audio.ndim == 2:
                 audio = audio.T  # (samples, channels)
             path = loop_stems_dir / f"{name}.wav"

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import WaveformPlayer, { PlaybackProvider } from './audio/WaveformPlayer';
-import { getTaskStatus } from '../services/apiService';
+import { API_BASE_URL, getTaskStatus } from '../services/apiService';
 import { downloadFile } from '../utils/download';
 import { DownloadIcon } from './icons';
 
@@ -110,7 +110,7 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
   const loops: LoopResult[] = taskStatus.result.loops;
   const hasStems = taskStatus.result?.stems_dir !== null;
   const reportUrl = taskStatus.result?.report_path
-    ? `/api/report/${taskId}`
+    ? `${API_BASE_URL}/api/report/${taskId}`
     : null;
 
   return (
@@ -184,8 +184,8 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
             </div>
 
             <WaveformPlayer
-              audioUrl={`${process.env.REACT_APP_API_URL}/api/loop/${taskId}/${loop.filename}`}
-              downloadUrl={`${process.env.REACT_APP_API_URL}/api/loop/${taskId}/${loop.filename}`}
+              audioUrl={`${API_BASE_URL}/api/loop/${taskId}/${loop.filename}`}
+              downloadUrl={`${API_BASE_URL}/api/loop/${taskId}/${loop.filename}`}
               downloadFilename={loop.filename}
             />
 
@@ -196,7 +196,7 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
                 </strong>
                 {Object.keys(loop.stems).map((stemName) => {
                   const basename = loop.basename || loop.filename.replace('.wav', '');
-                  const stemUrl = `${process.env.REACT_APP_API_URL}/api/stem/${taskId}/${basename}/${stemName}`;
+                  const stemUrl = `${API_BASE_URL}/api/stem/${taskId}/${basename}/${stemName}`;
                   return (
                     <WaveformPlayer
                       key={stemName}

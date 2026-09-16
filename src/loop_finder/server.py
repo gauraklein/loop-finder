@@ -7,43 +7,27 @@ audio analysis, and loop detection.
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import uvicorn
-import os
 import uuid
 import shutil
+import threading
+import webbrowser
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 import asyncio
-import json
-import sys
 import zipfile
 import io
 
-# ===== CRITICAL: Add src directory to Python path BEFORE any loop_finder imports =====
-# This ensures we can import the local loop_finder package
-current_dir = Path(__file__).parent
-project_root = current_dir.parent
-src_path = project_root / "src"
+from loop_finder.analyze import load_and_analyze
+from loop_finder.download import download_audio
+from loop_finder.score import find_candidates
+from loop_finder.export import export_loops, build_report, write_report_json
+from loop_finder.stems import separate_loops
 
-# Add src to Python path if not already there
-if str(src_path) not in sys.path:
-    sys.path.insert(0, str(src_path))
-    print(f"Added {src_path} to Python path")
-
-# Now import loop-finder functionality
-try:
-    from loop_finder.analyze import load_and_analyze
-    from loop_finder.download import download_audio, looks_like_url, normalize_url
-    from loop_finder.score import find_candidates
-    from loop_finder.export import export_loops, build_report, write_report_json
-    from loop_finder.stems import separate_loops, StemSeparator
-    print("Successfully imported loop_finder modules")
-except ImportError as e:
-    print(f"Failed to import loop_finder modules: {e}")
-    print(f"Current sys.path: {sys.path}")
-    print(f"Looking for src at: {src_path}")
-    print(f"Src exists: {src_path.exists()}")
-    raise
+# ponytail: repo-relative paths assume `pip install -e .` from a clone; use a user data dir if this ever ships as a wheel
+project_root = Path(__file__).resolve().parents[2]
+FRONTEND_BUILD = project_root / "frontend" / "build"
 
 app = FastAPI(title="Loop-Finder API", version="0.1.0")
 
@@ -65,10 +49,6 @@ RESULTS_DIR.mkdir(exist_ok=True)
 
 # In-memory storage for task status (use Redis/database in production)
 tasks: Dict[str, Dict[str, Any]] = {}
-
-@app.get("/")
-async def root():
-    return {"message": "Loop-Finder API is running"}
 
 @app.post("/upload")
 async def upload_file(
@@ -491,5 +471,19 @@ async def get_loops_zip(task_id: str, stems: bool = False):
         }
     )
 
+# Mounted last so the API routes above take precedence
+if FRONTEND_BUILD.is_dir():
+    app.mount("/", StaticFiles(directory=FRONTEND_BUILD, html=True), name="frontend")
+
+
+def run(port: int = 8000) -> None:
+    """Console script entrypoint: serve the UI + API and open the browser."""
+    if not FRONTEND_BUILD.is_dir():
+        raise SystemExit(f"No frontend build at {FRONTEND_BUILD}. Run: cd frontend && npm install && npm run build")
+    url = f"http://127.0.0.1:{port}"
+    threading.Timer(1.0, webbrowser.open, [url]).start()
+    uvicorn.run(app, host="127.0.0.1", port=port)
+
+
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    run()

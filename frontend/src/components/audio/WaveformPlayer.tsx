@@ -310,13 +310,13 @@ const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ audioUrl, downloadUrl, 
       audio.pause();
       setIsPlaying(false);
     } else {
+      // Register before starting: requestPlay stops the previously active
+      // player, which may be this one - doing it after play() paused ourselves.
+      playback?.requestPlay(stopPlayback);
       audio.currentTime = currentTime;
       audio
         .play()
-        .then(() => {
-          playback?.requestPlay(stopPlayback);
-          setIsPlaying(true);
-        })
+        .then(() => setIsPlaying(true))
         .catch(() => setError('Playback prevented. Click anywhere to enable audio.'));
     }
   };
