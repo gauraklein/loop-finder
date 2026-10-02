@@ -107,8 +107,11 @@ def load_and_analyze(
         )
     else:
         beat_frames = _track_beats_local(onset_env, sr_analysis, hop_length)
-        ibi = np.diff(beat_frames) * hop_length / sr_analysis
-        bpm = float(60.0 / np.median(ibi)) if ibi.size else 0.0
+        # Median over 16-beat spans: single beats are quantized to one
+        # analysis frame (~23ms), which reads 120 BPM as 117.5 or 123
+        t = beat_frames * hop_length / sr_analysis
+        n = min(16, len(t) - 1)
+        bpm = float(np.median(60.0 * n / (t[n:] - t[:-n]))) if n > 0 else 0.0
 
     beat_times = librosa.frames_to_time(
         beat_frames, sr=sr_analysis, hop_length=hop_length

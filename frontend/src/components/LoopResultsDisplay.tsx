@@ -10,6 +10,7 @@ interface LoopResult {
   basename: string | undefined;
   bars: number;
   rank: number;
+  bpm: number;
   score: number;
   start_time: number;
   end_time: number;
@@ -179,6 +180,7 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
 
             <div className="space-y-1 px-5 py-4 font-mono text-sm text-chrome/70">
               <p><span className="text-chrome">Bars:</span> {loop.bars}</p>
+              <p><span className="text-chrome">BPM:</span> {loop.bpm.toFixed(1)}</p>
               <p><span className="text-chrome">Duration:</span> {loop.duration.toFixed(2)}s</p>
               <p><span className="text-chrome">Time:</span> {loop.start_time.toFixed(2)}s &rarr; {loop.end_time.toFixed(2)}s</p>
             </div>

@@ -17,6 +17,8 @@ from loop_finder.download import (
     normalize_url,
 )
 from loop_finder.export import (
+    bpm_label,
+    bpm_range,
     build_report,
     export_loops,
     format_text_report,
@@ -155,7 +157,8 @@ def _process(
         typer.echo(f"Analyzing {audio.name} ...", err=True)
         analysis = load_and_analyze(audio, bpm_override=bpm)
         typer.echo(
-            f"Detected BPM: {analysis.bpm:.2f}  beats: {len(analysis.beat_times)}",
+            f"Detected BPM: {bpm_label(analysis.bpm, *bpm_range(analysis.beat_times))}"
+            f"  beats: {len(analysis.beat_times)}",
             err=True,
         )
 

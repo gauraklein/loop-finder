@@ -73,9 +73,9 @@ With `--out ./loops` (default), each track gets its own folder. Filenames start 
 loops/
   song/
     loops/
-      01_2bar_song.wav
-      01_4bar_song.wav
-      02_2bar_song.wav
+      01_2bar_120bpm_song.wav
+      01_4bar_120bpm_song.wav
+      02_2bar_118bpm_song.wav
     report.json
 ```
 
@@ -85,16 +85,17 @@ With `--stems`:
 loops/
   song/
     loops/
-      01_2bar_song.wav
+      01_2bar_120bpm_song.wav
     stems/
-      01_2bar_song_drums.wav
-      01_2bar_song_bass.wav
-      01_2bar_song_other.wav
-      01_2bar_song_vocals.wav
+      01_2bar_120bpm_song/
+        01_2bar_120bpm_song_drums.wav
+        01_2bar_120bpm_song_bass.wav
+        01_2bar_120bpm_song_other.wav
+        01_2bar_120bpm_song_vocals.wav
     report.json
 ```
 
-Each export is beat-aligned. Ranking uses boundary chroma match (seamless join), bar-to-bar coherence, loudness, and energy stability.
+The BPM in each filename is that loop's own tempo, which can differ from the track's on live recordings where the tempo drifts. Each export is beat-aligned. Ranking uses boundary chroma match (seamless join), bar-to-bar coherence, loudness, and energy stability.
 
 ## How it works
 

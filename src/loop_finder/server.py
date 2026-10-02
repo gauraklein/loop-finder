@@ -22,7 +22,13 @@ import io
 from loop_finder.analyze import load_and_analyze
 from loop_finder.download import download_audio
 from loop_finder.score import find_candidates
-from loop_finder.export import export_loops, build_report, write_report_json
+from loop_finder.export import (
+    bpm_label,
+    bpm_range,
+    build_report,
+    export_loops,
+    write_report_json,
+)
 from loop_finder.stems import separate_loops
 
 # ponytail: repo-relative paths assume `pip install -e .` from a clone; use a user data dir if this ever ships as a wheel
@@ -146,7 +152,7 @@ async def process_audio_task(task_id: str):
         print(f"Analyzing {task['file_path']}...")
         analysis = await asyncio.to_thread(load_and_analyze, task["file_path"])
         task["progress"] = 40
-        print(f"Detected BPM: {analysis.bpm:.2f}")
+        print(f"Detected BPM: {bpm_label(analysis.bpm, *bpm_range(analysis.beat_times))}")
 
         # Find candidates
         print("Finding loop candidates...")
@@ -221,6 +227,7 @@ async def process_audio_task(task_id: str):
                     "basename": row.get("basename"),
                     "bars": row["bars"],
                     "rank": row["rank"],
+                    "bpm": row["bpm"],
                     "score": round(row["score"], 4),
                     "start_time": round(row["start_time"], 3),
                     "end_time": round(row["end_time"], 3),
@@ -335,7 +342,7 @@ async def get_stem_file(task_id: str, loop_basename: str, stem_name: str):
         if not stems_base:
             raise HTTPException(status_code=404, detail="Stems directory not found")
 
-        file_path = stems_base / loop_basename / f"{stem_name}.wav"
+        file_path = stems_base / loop_basename / f"{loop_basename}_{stem_name}.wav"
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="Stem file not found")
     else:
@@ -345,7 +352,7 @@ async def get_stem_file(task_id: str, loop_basename: str, stem_name: str):
             raise HTTPException(status_code=404, detail="Task not found, not completed yet, or no stems generated")
 
         # Find the stem file by searching in track subdirectories
-        stem_files = list(task_dir.glob("*/stems/" + loop_basename + "/" + stem_name + ".wav"))
+        stem_files = list(task_dir.glob(f"*/stems/{loop_basename}/{loop_basename}_{stem_name}.wav"))
         if len(stem_files) != 1:
             raise HTTPException(status_code=404, detail="Task not found, not completed yet, or no stems generated")
 

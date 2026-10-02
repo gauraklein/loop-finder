@@ -19,6 +19,22 @@ def sanitize_track_name(name: str) -> str:
     return safe or "track"
 
 
+def bpm_range(beat_times: np.ndarray) -> tuple[float, float]:
+    """5th–95th percentile tempo over 4-beat spans (ignores single-beat jitter)."""
+    if len(beat_times) < 5:
+        return 0.0, 0.0
+    per_bar = 240.0 / (beat_times[4:] - beat_times[:-4])
+    lo, hi = np.percentile(per_bar, [5, 95])
+    return float(lo), float(hi)
+
+
+def bpm_label(bpm: float, lo: float, hi: float) -> str:
+    """'120.0', or '117.5 (95–133)' when the tempo varies by more than ~8%."""
+    if lo > 0 and hi / lo > 1.08:
+        return f"{bpm:.1f} ({lo:.0f}–{hi:.0f})"
+    return f"{bpm:.1f}"
+
+
 def track_output_dir(out_dir: Path, track_name: str) -> Path:
     return Path(out_dir) / sanitize_track_name(track_name)
 
@@ -64,7 +80,7 @@ def export_loops(
     """
     Write ranked WAV files under ``{out}/{track}/loops/``.
 
-    Filenames are number-first for small screens, e.g. ``01_2bar_Track.wav``.
+    Filenames are number-first for small screens, e.g. ``01_2bar_120bpm_Track.wav``.
     Returns ``(track_dir, rows)``.
     """
     out_dir = Path(out_dir)
@@ -83,7 +99,11 @@ def export_loops(
                 cand.end_time,
                 cand.boundary,
             )
-            basename = f"{rank:02d}_{bars}bar_{stem}"
+            # Tempo of this loop's own beats; it can differ from the track's
+            loop_bpm = (cand.end_beat - cand.start_beat) * 60.0 / (
+                cand.end_time - cand.start_time
+            )
+            basename = f"{rank:02d}_{bars}bar_{loop_bpm:.0f}bpm_{stem}"
             filename = f"{basename}.wav"
             path = loops_dir / filename
             sf.write(path, audio, analysis.sr_export)
@@ -93,6 +113,7 @@ def export_loops(
                 "basename": basename,
                 "bars": bars,
                 "rank": rank,
+                "bpm": round(loop_bpm, 1),
                 "score": round(cand.score, 4),
                 "boundary": round(cand.boundary, 4),
                 "coherence": round(cand.coherence, 4),
@@ -114,9 +135,12 @@ def build_report(
     rows: list[dict],
 ) -> dict:
     """Assemble a machine-readable report."""
+    lo, hi = bpm_range(analysis.beat_times)
     return {
         "source": str(analysis.path),
         "bpm": round(analysis.bpm, 3),
+        "bpm_min": round(lo, 1),
+        "bpm_max": round(hi, 1),
         "sample_rate": analysis.sr_export,
         "num_beats": int(len(analysis.beat_times)),
         "loops": rows,
@@ -137,7 +161,7 @@ def format_text_report(report: dict) -> str:
         lines.append(f"URL:    {report['source_url']}")
     lines.extend(
         [
-            f"BPM:    {report['bpm']}",
+            f"BPM:    {bpm_label(report['bpm'], report['bpm_min'], report['bpm_max'])}",
             f"Beats:  {report['num_beats']}",
             "",
         ]
@@ -147,14 +171,15 @@ def format_text_report(report: dict) -> str:
         return "\n".join(lines)
 
     lines.append(
-        f"{'file':<40} {'bars':>4} {'rank':>4} {'score':>7} "
+        f"{'file':<40} {'bars':>4} {'rank':>4} {'bpm':>6} {'score':>7} "
         f"{'start':>8} {'end':>8}"
     )
-    lines.append("-" * 80)
+    lines.append("-" * 87)
     for row in report["loops"]:
         name = Path(row["file"]).name
         lines.append(
-            f"{name:<40} {row['bars']:>4} {row['rank']:>4} {row['score']:>7.4f} "
+            f"{name:<40} {row['bars']:>4} {row['rank']:>4} {row['bpm']:>6.1f} "
+            f"{row['score']:>7.4f} "
             f"{row['start_time']:>8.2f} {row['end_time']:>8.2f}"
         )
     return "\n".join(lines)
