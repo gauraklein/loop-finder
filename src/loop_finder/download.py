@@ -84,3 +84,18 @@ def download_audio(url: str, dest_dir: Path) -> Path:
         wav_path = named
 
     return wav_path
+
+
+def expand_playlist(url: str) -> list[str]:
+    """Return video URLs for a playlist URL, or [url] if it's a single video."""
+    url = normalize_url(url)
+    opts = {"extract_flat": "in_playlist", "noplaylist": True, "quiet": True, "no_warnings": True}
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+    if not info or "entries" not in info:
+        return [url]
+    return [
+        e.get("url") or f"https://www.youtube.com/watch?v={e['id']}"
+        for e in info["entries"]
+        if e and (e.get("url") or e.get("id"))
+    ]

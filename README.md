@@ -42,6 +42,7 @@ cd frontend && npm start   # http://localhost:3000, talks to :8000 via .env.deve
 ```bash
 loop-finder path/to/track.wav
 loop-finder "https://www.youtube.com/watch?v=VIDEO_ID"
+loop-finder "https://www.youtube.com/playlist?list=PLAYLIST_ID"  # every video in the playlist (--limit N for the first N)
 loop-finder https://youtu.be/VIDEO_ID
 loop-finder track.mp3 --bars 4,2 --top 5 --out ./loops
 loop-finder track.wav --bars 8

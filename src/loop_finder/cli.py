@@ -10,7 +10,12 @@ from typing import Optional
 import typer
 
 from loop_finder.analyze import load_and_analyze
-from loop_finder.download import download_audio, looks_like_url, normalize_url
+from loop_finder.download import (
+    download_audio,
+    expand_playlist,
+    looks_like_url,
+    normalize_url,
+)
 from loop_finder.export import (
     build_report,
     export_loops,
@@ -88,10 +93,62 @@ def main(
     as_json: bool = typer.Option(
         False, "--json", help="Print machine-readable report to stdout"
     ),
+    limit: Optional[int] = typer.Option(
+        None, "--limit", min=1, help="Only process the first N videos of a playlist"
+    ),
 ) -> None:
     """Analyze a local audio file or YouTube URL and export the best loops."""
     bar_lengths = _parse_bars(bars)
 
+    sources = [source]
+    if looks_like_url(source):
+        try:
+            sources = expand_playlist(source)
+        except Exception as exc:  # noqa: BLE001 — surface yt-dlp errors cleanly
+            raise typer.BadParameter(f"Could not read URL: {exc}") from exc
+        if not sources:
+            raise typer.BadParameter("Playlist is empty")
+        sources = sources[:limit]
+        if len(sources) > 1:
+            typer.echo(f"Playlist: {len(sources)} videos", err=True)
+
+    if len(sources) == 1:
+        report = _process(sources[0], bar_lengths, top, out, bpm, min_score, stems, as_json)
+        if as_json:
+            typer.echo(json.dumps(report, indent=2))
+        return
+
+    reports, failed = [], []
+    for i, src in enumerate(sources, 1):
+        typer.echo(f"\n[{i}/{len(sources)}] {src}", err=True)
+        try:
+            reports.append(
+                _process(src, bar_lengths, top, out, bpm, min_score, stems, as_json)
+            )
+        except typer.BadParameter as exc:
+            # Private/deleted videos shouldn't kill the whole playlist
+            typer.echo(f"Skipped: {exc}", err=True)
+            failed.append(src)
+    if as_json:
+        typer.echo(json.dumps(reports, indent=2))
+    typer.echo(
+        f"\nDone: {len(reports)} processed, {len(failed)} skipped", err=True
+    )
+    if not reports:
+        raise typer.Exit(code=1)
+
+
+def _process(
+    source: str,
+    bar_lengths: list[int],
+    top: int,
+    out: Path,
+    bpm: Optional[float],
+    min_score: float,
+    stems: bool,
+    as_json: bool,
+) -> dict:
+    """Analyze one source, export loops, and return its report."""
     with tempfile.TemporaryDirectory(prefix="loop-finder-") as tmp:
         audio, source_url = _resolve_audio(source, Path(tmp))
 
@@ -133,14 +190,14 @@ def main(
         report_path = track_dir / "report.json"
         write_report_json(report, report_path)
 
-        if as_json:
-            typer.echo(json.dumps(report, indent=2))
-        else:
+        if not as_json:
             typer.echo(format_text_report(report))
             typer.echo(f"\nWrote {len(rows)} loop(s) to {track_dir / 'loops'}", err=True)
             if stems:
                 typer.echo(f"Stems written to {track_dir / 'stems'}", err=True)
             typer.echo(f"Report: {report_path}", err=True)
+
+        return report
 
 
 def app() -> None:
