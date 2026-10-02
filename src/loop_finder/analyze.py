@@ -26,25 +26,40 @@ def _track_beats_local(
     local_bpm = librosa.feature.tempo(
         onset_envelope=onset_env, sr=sr, hop_length=hop_length, aggregate=None
     )
+    # Whole-track tempo picks the octave (e.g. 70 vs 140); every chunk is
+    # folded into [anchor/√2, anchor·√2]. Folding against the previous chunk
+    # instead lets small steps ratchet up a whole octave.
+    # ponytail: sets that drift more than ~2x overall get folded back down
+    anchor = float(np.atleast_1d(librosa.beat.beat_track(
+        onset_envelope=onset_env, sr=sr, hop_length=hop_length
+    )[0])[0])
     step, pad = int(CHUNK_S * fps), int(CHUNK_PAD_S * fps)
     kept: list[np.ndarray] = []
+    tempos: list[np.ndarray] = []
     for s in range(0, len(onset_env), step):
+        bpm = float(np.median(local_bpm[s : s + step]))
+        while bpm > anchor * 1.414:
+            bpm /= 2
+        while bpm < anchor / 1.414:
+            bpm *= 2
         a = max(0, s - pad)
         _, b = librosa.beat.beat_track(
             onset_envelope=onset_env[a : s + step + pad],
             sr=sr,
             hop_length=hop_length,
-            start_bpm=float(np.median(local_bpm[s : s + step])),
+            bpm=bpm,
             trim=False,
             units="frames",
         )
         b = b + a
-        kept.append(b[(b >= s) & (b < s + step)])
+        b = b[(b >= s) & (b < s + step)]
+        kept.append(b)
+        tempos.append(np.full(len(b), bpm))
 
     # Drop duplicate beats where neighbouring chunks overlap at a seam
     frames: list[int] = []
-    for f in np.concatenate(kept):
-        if not frames or f - frames[-1] >= 0.5 * fps * 60.0 / local_bpm[f]:
+    for f, bpm in zip(np.concatenate(kept), np.concatenate(tempos)):
+        if not frames or f - frames[-1] >= 0.5 * fps * 60.0 / bpm:
             frames.append(int(f))
     return np.asarray(frames)
 
@@ -76,8 +91,9 @@ def load_and_analyze(
     y_export, sr_export = librosa.load(path, sr=EXPORT_SR, mono=True)
     y_analysis, sr_analysis = librosa.load(path, sr=ANALYSIS_SR, mono=True)
 
+    # Median aggregation matches what beat_track(y=...) uses internally
     onset_env = librosa.onset.onset_strength(
-        y=y_analysis, sr=sr_analysis, hop_length=hop_length
+        y=y_analysis, sr=sr_analysis, hop_length=hop_length, aggregate=np.median
     )
     if bpm_override is not None:
         # User asserts a constant tempo: one global track locked to it
