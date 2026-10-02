@@ -14,6 +14,10 @@ BEATS_PER_BAR = 4
 # Reject windows quieter than this fraction of the track's active median RMS.
 MIN_LOUDNESS_RATIO = 0.55
 
+# Reject windows whose beat spacing varies more than this (coefficient of
+# variation). Steady sections measure ~0.03; a drifting window won't loop.
+MAX_TEMPO_DRIFT = 0.08
+
 
 @dataclass
 class LoopCandidate:
@@ -76,6 +80,10 @@ def score_candidate(
     end_beat = start_beat + beats_needed
     # Need one extra beat after the loop for wrap continuity
     if end_beat + 1 >= len(analysis.beat_times):
+        return None
+
+    ibi = np.diff(analysis.beat_times[start_beat : end_beat + 2])
+    if np.std(ibi) > MAX_TEMPO_DRIFT * np.mean(ibi):
         return None
 
     start_time = float(analysis.beat_times[start_beat])
@@ -141,11 +149,12 @@ def score_candidate(
         cv = std_rms / mean_rms
         energy = float(np.clip(1.0 - 0.5 * cv, 0.0, 1.0))
 
-    # Weighted overall score — loudness outweighs flat quiet sections
+    # Weighted overall score — loudness is a light tiebreak; the
+    # MIN_LOUDNESS_RATIO filter above already drops near-silent windows
     score = (
-        0.35 * boundary
-        + 0.25 * coherence
-        + 0.30 * loudness
+        0.45 * boundary
+        + 0.35 * coherence
+        + 0.10 * loudness
         + 0.10 * energy
     )
 
@@ -188,7 +197,9 @@ def find_candidates(
 
         # Diversify: skip candidates that heavily overlap a higher-ranked one
         selected: list[LoopCandidate] = []
-        min_gap_beats = max(BEATS_PER_BAR, beats_needed // 2)
+        # Gap scales with track length so long sets yield picks from across
+        # the whole track; short tracks keep the half-loop minimum.
+        min_gap_beats = max(BEATS_PER_BAR, beats_needed // 2, n_beats // (2 * top))
         for cand in scored:
             if any(
                 abs(cand.start_beat - s.start_beat) < min_gap_beats for s in selected
