@@ -18,6 +18,40 @@ CHUNK_S = 30.0
 CHUNK_PAD_S = 10.0  # overlap so the tracker has settled phase at kept beats
 
 
+# Local chunk tempo must beat the whole-track grid by this factor to be used
+LOCAL_TEMPO_MARGIN = 1.10
+
+
+def _track_chunk(
+    onset_env: np.ndarray,
+    a: int,
+    s: int,
+    step: int,
+    pad: int,
+    bpm: float,
+    sr: int,
+    hop_length: int,
+) -> np.ndarray:
+    """Beats at a fixed tempo for chunk [s, s+step), tracked with padding."""
+    _, b = librosa.beat.beat_track(
+        onset_envelope=onset_env[a : s + step + pad],
+        sr=sr,
+        hop_length=hop_length,
+        bpm=bpm,
+        trim=False,
+        units="frames",
+    )
+    b = b + a
+    return b[(b >= s) & (b < s + step)]
+
+
+def _onset_at(onset_env: np.ndarray, beats: np.ndarray) -> float:
+    """Mean onset strength at beats (±2 frames), i.e. how well a grid fits."""
+    if len(beats) == 0:
+        return 0.0
+    return float(np.mean([onset_env[max(0, f - 2) : f + 3].max() for f in beats]))
+
+
 def _track_beats_local(
     onset_env: np.ndarray, sr: int, hop_length: int
 ) -> np.ndarray:
@@ -43,16 +77,14 @@ def _track_beats_local(
         while bpm < anchor / 1.414:
             bpm *= 2
         a = max(0, s - pad)
-        _, b = librosa.beat.beat_track(
-            onset_envelope=onset_env[a : s + step + pad],
-            sr=sr,
-            hop_length=hop_length,
-            bpm=bpm,
-            trim=False,
-            units="frames",
-        )
-        b = b + a
-        b = b[(b >= s) & (b < s + step)]
+        b = _track_chunk(onset_env, a, s, step, pad, bpm, sr, hop_length)
+        # Local tempo can be a 4:3 or half-time misread on steady songs.
+        # Keep it only if its beats land clearly harder on onsets than the
+        # whole-track grid does; real slow sections win by 15–45%.
+        if bpm != anchor:
+            b_anchor = _track_chunk(onset_env, a, s, step, pad, anchor, sr, hop_length)
+            if _onset_at(onset_env, b) < LOCAL_TEMPO_MARGIN * _onset_at(onset_env, b_anchor):
+                b, bpm = b_anchor, anchor
         kept.append(b)
         tempos.append(np.full(len(b), bpm))
 

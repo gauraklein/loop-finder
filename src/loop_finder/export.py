@@ -20,11 +20,12 @@ def sanitize_track_name(name: str) -> str:
 
 
 def bpm_range(beat_times: np.ndarray) -> tuple[float, float]:
-    """5th–95th percentile tempo over 4-beat spans (ignores single-beat jitter)."""
-    if len(beat_times) < 5:
+    """5th–95th percentile tempo over 16-beat spans (ignores beat jitter)."""
+    n = min(16, len(beat_times) - 1)
+    if n < 1:
         return 0.0, 0.0
-    per_bar = 240.0 / (beat_times[4:] - beat_times[:-4])
-    lo, hi = np.percentile(per_bar, [5, 95])
+    per_span = 60.0 * n / (beat_times[n:] - beat_times[:-n])
+    lo, hi = np.percentile(per_span, [5, 95])
     return float(lo), float(hi)
 
 
