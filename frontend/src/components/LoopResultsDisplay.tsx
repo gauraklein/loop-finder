@@ -53,7 +53,6 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
   const [taskStatus, setTaskStatus] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const [isGeneratingZip, setIsGeneratingZip] = useState<boolean>(false);
 
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
@@ -113,6 +112,9 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
   const reportUrl = taskStatus.result?.report_path
     ? `${API_BASE_URL}/api/report/${taskId}`
     : null;
+  // Server streams the ZIP with its own Content-Disposition filename
+  const downloadZip = (withLoops: boolean, withStems: boolean) =>
+    downloadFile(`${API_BASE_URL}/api/zip-loops/${taskId}?loops=${withLoops}&stems=${withStems}`, '');
 
   return (
     <div>
@@ -128,36 +130,24 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
               </span>
             </button>
           )}
-          <button
-            onClick={() => {
-              setIsGeneratingZip(true);
-              // In a real implementation, this would call a backend endpoint
-              // to generate and serve a ZIP file
-              alert('ZIP generation would be implemented here - for now, use individual download buttons');
-              setIsGeneratingZip(false);
-            }}
-            disabled={isGeneratingZip}
-            className={btnSecondary}
-          >
+          <button onClick={() => downloadZip(true, false)} className={btnSecondary}>
             <span className="inline-flex skew-x-12 transform items-center gap-2">
-              <DownloadIcon className="h-4 w-4" />
-              {isGeneratingZip ? 'Generating...' : 'Download All Loops'}
+              <DownloadIcon className="h-4 w-4" /> Download All Loops
             </span>
           </button>
           {hasStems && (
-            <button
-              onClick={() => {
-                setIsGeneratingZip(true);
-                alert('Stem ZIP generation would be implemented here');
-                setIsGeneratingZip(false);
-              }}
-              disabled={isGeneratingZip}
-              className={btnOutline}
-            >
-              <span className="inline-flex skew-x-12 transform items-center gap-2">
-                <DownloadIcon className="h-4 w-4" /> Download All Stems
-              </span>
-            </button>
+            <>
+              <button onClick={() => downloadZip(false, true)} className={btnOutline}>
+                <span className="inline-flex skew-x-12 transform items-center gap-2">
+                  <DownloadIcon className="h-4 w-4" /> Download All Stems
+                </span>
+              </button>
+              <button onClick={() => downloadZip(true, true)} className={btnOutline}>
+                <span className="inline-flex skew-x-12 transform items-center gap-2">
+                  <DownloadIcon className="h-4 w-4" /> Loops + Stems
+                </span>
+              </button>
+            </>
           )}
         </div>
       </div>

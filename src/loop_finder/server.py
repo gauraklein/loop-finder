@@ -406,8 +406,8 @@ async def get_report_file(task_id: str):
     )
 
 @app.get("/api/zip-loops/{task_id}")
-async def get_loops_zip(task_id: str, stems: bool = False):
-    """Generate and serve a ZIP file containing all loops (and optionally stems)."""
+async def get_loops_zip(task_id: str, loops: bool = True, stems: bool = False):
+    """Serve a ZIP of all loops, all stems, or both (plus the report)."""
     # First check if task is in memory
     if task_id in tasks:
         task = tasks[task_id]
@@ -419,19 +419,22 @@ async def get_loops_zip(task_id: str, stems: bool = False):
     else:
         # Fallback to checking filesystem for completed tasks
         # Verify it's a completed task by checking if report and loops directory exist
+        # Layout is results/{task_id}/{track}/loops (see export_loops)
         report_path = RESULTS_DIR / task_id / "report.json"
-        loops_dir = RESULTS_DIR / task_id / "loops"
-        if not report_path.exists() or not loops_dir.exists():
+        loops_dirs = list((RESULTS_DIR / task_id).glob("*/loops"))
+        if not report_path.exists() or len(loops_dirs) != 1:
             raise HTTPException(status_code=404, detail="Task not found or not completed yet")
+        loops_dir = loops_dirs[0]
+        stems_path = loops_dir.parent / "stems"
 
         # Create a minimal task-like object for the ZIP generation logic
         task = {
             "result": {
                 "report_path": str(report_path),
                 "loops_dir": str(loops_dir),
-                "stems_dir": str(RESULTS_DIR / task_id / "stems") if (RESULTS_DIR / task_id / "stems").exists() else None
+                "stems_dir": str(stems_path) if stems_path.exists() else None
             },
-            "stems": (RESULTS_DIR / task_id / "stems").exists()
+            "stems": stems_path.exists()
         }
 
     # Create a ZIP file in memory
@@ -446,7 +449,7 @@ async def get_loops_zip(task_id: str, stems: bool = False):
 
         # Add loop files
         loops_dir = Path(task["result"]["loops_dir"]) if task["result"].get("loops_dir") else None
-        if loops_dir and loops_dir.exists():
+        if loops and loops_dir and loops_dir.exists():
             for loop_file in loops_dir.glob("*.wav"):
                 zip_file.write(loop_file, f"loops/{loop_file.name}")
 
@@ -465,10 +468,8 @@ async def get_loops_zip(task_id: str, stems: bool = False):
     zip_buffer.seek(0)
 
     # Generate filename
-    zip_filename = f"loop-finder-results-{task_id}"
-    if stems:
-        zip_filename += "-with-stems"
-    zip_filename += ".zip"
+    contents = "-".join(name for name, on in (("loops", loops), ("stems", stems)) if on)
+    zip_filename = f"loop-finder-{contents or 'report'}-{task_id}.zip"
 
     return StreamingResponse(
         io.BytesIO(zip_buffer.read()),
