@@ -36,8 +36,22 @@ def bpm_label(bpm: float, lo: float, hi: float) -> str:
     return f"{bpm:.1f}"
 
 
+# Longest file/folder name (without extension): fits small sampler screens
+MAX_NAME = 50
+
+
+def short_title(name: str, limit: int = MAX_NAME) -> str:
+    """Drop (…)/[…] tags like '(Official Video)' and cut to ``limit`` on a word."""
+    title = re.sub(r"\s*[(\[][^)\]]*[)\]]", "", name)
+    title = re.sub(r"\s+", " ", title).strip(" -_.") or name
+    if len(title) > limit:
+        cut = title[:limit]
+        title = (cut.rsplit(" ", 1)[0] if " " in cut else cut).rstrip(" -_.,&")
+    return title
+
+
 def track_output_dir(out_dir: Path, track_name: str) -> Path:
-    return Path(out_dir) / sanitize_track_name(track_name)
+    return Path(out_dir) / short_title(sanitize_track_name(track_name))
 
 
 def _slice_audio(
@@ -81,7 +95,8 @@ def export_loops(
     """
     Write ranked WAV files under ``{out}/{track}/loops/``.
 
-    Filenames are number-first for small screens, e.g. ``01_2bar_120bpm_Track.wav``.
+    Filenames are number-first for small screens, e.g. ``01_2bar_120bpm_Track.wav``,
+    capped at MAX_NAME characters.
     Returns ``(track_dir, rows)``.
     """
     out_dir = Path(out_dir)
@@ -104,7 +119,8 @@ def export_loops(
             loop_bpm = (cand.end_beat - cand.start_beat) * 60.0 / (
                 cand.end_time - cand.start_time
             )
-            basename = f"{rank:02d}_{bars}bar_{loop_bpm:.0f}bpm_{stem}"
+            tag = f"{rank:02d}_{bars}bar_{loop_bpm:.0f}bpm"
+            basename = f"{tag}_{short_title(stem, MAX_NAME - len(tag) - 1)}"
             filename = f"{basename}.wav"
             path = loops_dir / filename
             sf.write(path, audio, analysis.sr_export)
@@ -112,6 +128,7 @@ def export_loops(
             row = {
                 "file": str(path),
                 "basename": basename,
+                "tag": tag,
                 "bars": bars,
                 "rank": rank,
                 "bpm": round(loop_bpm, 1),

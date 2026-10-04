@@ -35,12 +35,13 @@ class StemSeparator:
         loop_path: Path,
         stems_dir: Path,
         basename: str,
+        tag: str,
     ) -> dict[str, Path]:
         """
         Run Demucs on a loop WAV and write stem WAVs into stems_dir.
 
-        Files are named ``{basename}/{basename}_{stem_name}.wav`` so a stem keeps its
-        rank/bars/BPM when moved out of its folder.
+        Files are named ``{basename}/{tag}_{stem_name}.wav`` (tag is rank/bars/BPM)
+        so a stem keeps them when moved out of its folder.
         """
         loop_path = Path(loop_path)
         stems_dir = Path(stems_dir)
@@ -65,7 +66,7 @@ class StemSeparator:
             # Demucs tensors are (channels, samples); soundfile wants (samples,) or (samples, ch)
             if audio.ndim == 2:
                 audio = audio.T  # (samples, channels)
-            path = loop_stems_dir / f"{basename}_{name}.wav"
+            path = loop_stems_dir / f"{tag}_{name}.wav"
             sf.write(path, audio.astype(np.float32, copy=False), sr)
             written[name] = path
 
@@ -95,7 +96,9 @@ def separate_loops(
         basename = row.get("basename") or loop_path.stem
         if on_progress:
             on_progress(loop_path.name)
-        written = separator.separate_file(loop_path, stems_dir, basename)
+        written = separator.separate_file(
+            loop_path, stems_dir, basename, row.get("tag") or basename
+        )
         # Update stems_dir to point to the loop-specific directory
         row["stems_dir"] = str(stems_dir / basename)
         row["stems"] = {name: str(path) for name, path in written.items()}

@@ -195,7 +195,7 @@ const LoopResultsDisplay: React.FC<LoopResultsDisplayProps> = ({ taskId }) => {
                       label={stemName}
                       audioUrl={stemUrl}
                       downloadUrl={stemUrl}
-                      downloadFilename={`${basename}_${stemName}.wav`}
+                      downloadFilename={loop.stems?.[stemName]?.split('/').pop() ?? `${basename}_${stemName}.wav`}
                     />
                   );
                 })}

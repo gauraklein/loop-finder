@@ -88,14 +88,14 @@ loops/
       01_2bar_120bpm_song.wav
     stems/
       01_2bar_120bpm_song/
-        01_2bar_120bpm_song_drums.wav
-        01_2bar_120bpm_song_bass.wav
-        01_2bar_120bpm_song_other.wav
-        01_2bar_120bpm_song_vocals.wav
+        01_2bar_120bpm_drums.wav
+        01_2bar_120bpm_bass.wav
+        01_2bar_120bpm_other.wav
+        01_2bar_120bpm_vocals.wav
     report.json
 ```
 
-The BPM in each filename is that loop's own tempo, which can differ from the track's on live recordings where the tempo drifts. Each export is beat-aligned. Ranking uses boundary chroma match (seamless join), bar-to-bar coherence, loudness, and energy stability.
+Names are capped at 50 characters for sampler screens: tags like `(Official Video)` are dropped and long titles are cut at a word. The BPM in each filename is that loop's own tempo, which can differ from the track's on live recordings where the tempo drifts. Each export is beat-aligned. Ranking uses boundary chroma match (seamless join), bar-to-bar coherence, loudness, and energy stability.
 
 ## How it works
 

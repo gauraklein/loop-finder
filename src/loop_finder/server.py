@@ -186,7 +186,8 @@ async def process_audio_task(task_id: str):
             for row in rows:
                 loop_rows.append({
                     "file": row["file"],
-                    "basename": row.get("basename") or Path(row["file"]).stem
+                    "basename": row.get("basename") or Path(row["file"]).stem,
+                    "tag": row.get("tag"),
                 })
 
             # Separate stems (CPU-bound Demucs inference - off the event loop too)
@@ -325,6 +326,12 @@ async def get_loop_file(task_id: str, filename: str):
         filename=filename
     )
 
+def _find_stem(loop_dir: Path, stem_name: str) -> Optional[Path]:
+    """Stem WAV in a loop's folder: '{tag}_{stem}.wav', or '{stem}.wav' in older results."""
+    matches = [*loop_dir.glob(f"*_{stem_name}.wav"), *loop_dir.glob(f"{stem_name}.wav")]
+    return matches[0] if matches else None
+
+
 @app.get("/api/stem/{task_id}/{loop_basename}/{stem_name}")
 async def get_stem_file(task_id: str, loop_basename: str, stem_name: str):
     """Serve a stem WAV file for audio playback."""
@@ -342,8 +349,8 @@ async def get_stem_file(task_id: str, loop_basename: str, stem_name: str):
         if not stems_base:
             raise HTTPException(status_code=404, detail="Stems directory not found")
 
-        file_path = stems_base / loop_basename / f"{loop_basename}_{stem_name}.wav"
-        if not file_path.exists():
+        file_path = _find_stem(stems_base / loop_basename, stem_name)
+        if not file_path:
             raise HTTPException(status_code=404, detail="Stem file not found")
     else:
         # Fallback to checking filesystem for completed tasks
@@ -352,13 +359,10 @@ async def get_stem_file(task_id: str, loop_basename: str, stem_name: str):
             raise HTTPException(status_code=404, detail="Task not found, not completed yet, or no stems generated")
 
         # Find the stem file by searching in track subdirectories
-        stem_files = list(task_dir.glob(f"*/stems/{loop_basename}/{loop_basename}_{stem_name}.wav"))
-        if len(stem_files) != 1:
+        loop_dirs = list(task_dir.glob(f"*/stems/{loop_basename}"))
+        file_path = _find_stem(loop_dirs[0], stem_name) if len(loop_dirs) == 1 else None
+        if not file_path:
             raise HTTPException(status_code=404, detail="Task not found, not completed yet, or no stems generated")
-
-        file_path = stem_files[0]
-        if not file_path.exists():
-            raise HTTPException(status_code=404, detail="Stem file not found")
 
         # Verify it's a completed task by checking if report and loops exist
         report_path = task_dir / "report.json"
@@ -369,7 +373,7 @@ async def get_stem_file(task_id: str, loop_basename: str, stem_name: str):
     return FileResponse(
         path=str(file_path),
         media_type="audio/wav",
-        filename=f"{loop_basename}_{stem_name}.wav"
+        filename=file_path.name
     )
 
 @app.get("/api/report/{task_id}")
